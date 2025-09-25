@@ -39,6 +39,7 @@ public class SecurityConfig {
                         .requestMatchers("/profile/**").authenticated()           // Authenticated endpoints
 //                        .requestMatchers("/profile_update").authenticated()
                                 .requestMatchers("/templates/**").permitAll()
+                                .requestMatchers("/templates/common/upload").permitAll()
                         .anyRequest().authenticated()                             // All other endpoints require auth
                 )
                 .sessionManagement(session ->
