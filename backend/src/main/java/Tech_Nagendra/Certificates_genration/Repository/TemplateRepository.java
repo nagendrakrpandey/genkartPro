@@ -12,5 +12,7 @@ import java.util.Optional;
 public interface TemplateRepository extends JpaRepository<Template, Long> {
    // Template findByTemplateName(String templateName);
     Optional<Template> findByTemplateName(String templateName);
+    List<Template> findByUserId(Long userId);
+
 
 }

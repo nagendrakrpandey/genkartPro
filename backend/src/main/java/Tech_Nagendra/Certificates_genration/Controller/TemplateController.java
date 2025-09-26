@@ -72,8 +72,8 @@ public class TemplateController {
 
         // 2. Check common images from column
         Template template = service.getTemplateByName(templateName);
-        if (template != null && template.getCommon_images() != null) {
-            String[] commonPaths = template.getCommon_images().split(",");
+        if (template != null && template.getCommonImages() != null) {
+            String[] commonPaths = template.getCommonImages().split(",");
             for (String path : commonPaths) {
                 File commonImage = new File(path.trim());
                 if (commonImage.exists() && commonImage.getName().equals(imageName)) {

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { FileSpreadsheet, Image, Clock, CheckCircle, FileImage, Stamp, Plus, X } from "lucide-react";
+import { FileSpreadsheet, Clock, CheckCircle, FileImage, Stamp } from "lucide-react";
 import api from "@/Services/api";
 
 interface TemplateType {
@@ -17,14 +17,6 @@ interface TemplateType {
 
 interface TemplateFiles {
   excel: File | null;
-  zip: File | null;
-  logo: File | null;
-  sign: File | null;
-}
-
-interface UploadTemplateFiles {
-  jrxml: File | null;
-  images: File[];
 }
 
 function UploadCard({
@@ -33,43 +25,22 @@ function UploadCard({
   accept,
   onChange,
   file,
-  multiple = false,
-  preview = false,
 }: {
   title: string;
   icon: React.ReactNode;
   accept: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  file: File | File[] | null;
-  multiple?: boolean;
-  preview?: boolean;
+  file: File | null;
 }) {
   return (
     <div className="flex flex-col items-center bg-white rounded-xl shadow-md p-4 border border-gray-200 hover:shadow-xl transition-all duration-300">
       <div className="text-indigo-600 mb-2">{icon}</div>
       <label className="text-sm font-semibold mb-1">{title}</label>
-      <Input type="file" accept={accept} onChange={onChange} multiple={multiple} className="mb-2 w-full max-w-xs" />
+      <Input type="file" accept={accept} onChange={onChange} className="mb-2 w-full max-w-xs" />
       {file && (
-        <div className="flex flex-col items-center mt-2 w-full gap-2">
-          {Array.isArray(file)
-            ? file.map((f, idx) => (
-                <div key={idx} className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg w-full justify-between">
-                  <span className="truncate font-medium">{f.name}</span>
-                  <Badge variant="secondary">Ready</Badge>
-                  {preview && f.type.startsWith("image/") && (
-                    <img src={URL.createObjectURL(f)} alt="preview" className="h-20 object-contain mt-2 rounded-md border" />
-                  )}
-                </div>
-              ))
-            : (
-                <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg w-full justify-between">
-                  <span className="truncate font-medium">{file.name}</span>
-                  <Badge variant="secondary">Ready</Badge>
-                  {preview && file.type.startsWith("image/") && (
-                    <img src={URL.createObjectURL(file)} alt="preview" className="h-20 object-contain mt-2 rounded-md border" />
-                  )}
-                </div>
-              )}
+        <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg w-full justify-between">
+          <span className="truncate font-medium">{file.name}</span>
+          <Badge variant="secondary">Ready</Badge>
         </div>
       )}
     </div>
@@ -79,10 +50,8 @@ function UploadCard({
 export default function CertificatePage() {
   const [templates, setTemplates] = useState<TemplateType[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateType | null>(null);
-  const [files, setFiles] = useState<TemplateFiles>({ excel: null, zip: null, logo: null, sign: null });
+  const [files, setFiles] = useState<TemplateFiles>({ excel: null });
   const [isUploading, setIsUploading] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadFiles, setUploadFiles] = useState<UploadTemplateFiles>({ jrxml: null, images: [] });
   const { toast } = useToast();
 
   useEffect(() => {
@@ -91,45 +60,34 @@ export default function CertificatePage() {
       .catch((err) => toast({ title: "Error", description: err.response?.data || err.message, variant: "destructive" }));
   }, []);
 
-  const requiredFields = selectedTemplate ? (() => {
-    const type = selectedTemplate.imageType;
-    const fields: (keyof TemplateFiles)[] = [];
-    if (type >= 0) fields.push("excel");
-    if (type >= 1) fields.push("zip");
-    if (type >= 2) fields.push("logo");
-    if (type >= 3) fields.push("sign");
-    return fields;
-  })() : [];
-
   const handleSelectTemplateByName = async (name: string) => {
     try {
       const res = await api.get(`/templates/name/${name}`);
       setSelectedTemplate(res.data);
-      setFiles({ excel: null, zip: null, logo: null, sign: null });
+      setFiles({ excel: null });
     } catch (err: any) {
       toast({ title: "Error", description: err.response?.data || err.message, variant: "destructive" });
     }
   };
 
-  const handleFileUpload = (type: keyof TemplateFiles, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
-    if (file) setFiles(prev => ({ ...prev, [type]: file }));
+    if (file) setFiles({ excel: file });
   };
 
   const handleGenerate = async () => {
-    if (!selectedTemplate) return;
-    const missing = requiredFields.filter(f => !files[f]);
-    if (missing.length > 0) {
-      toast({ title: "Missing files", description: `Please upload: ${missing.join(", ")}`, variant: "destructive" });
-      return;
+    if (!selectedTemplate || !files.excel) {
+      return toast({ title: "Missing fields", description: "Please select template and upload Excel file", variant: "destructive" });
     }
 
     const formData = new FormData();
-    requiredFields.forEach(f => files[f] && formData.append(f, files[f]!));
+    formData.append("templateId", selectedTemplate.id.toString());
+    formData.append("userId", "1"); // replace with actual userId
+    formData.append("excelFile", files.excel);
 
     setIsUploading(true);
     try {
-      const res = await api.post(`/generateCertificate/${selectedTemplate.id}/1/download`, formData, { responseType: "blob" });
+      const res = await api.post("/certificates/generate", formData, { responseType: "blob" });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/zip" }));
       const link = document.createElement("a");
       link.href = url;
@@ -137,9 +95,10 @@ export default function CertificatePage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      setFiles({ excel: null, zip: null, logo: null, sign: null });
-      setSelectedTemplate(null);
+
       toast({ title: "Success ✅", description: "Certificates downloaded successfully." });
+      setFiles({ excel: null });
+      setSelectedTemplate(null);
     } catch (err: any) {
       toast({ title: "Error ⚠️", description: err.response?.data || err.message, variant: "destructive" });
     } finally {
@@ -147,34 +106,12 @@ export default function CertificatePage() {
     }
   };
 
-  const handleUploadTemplate = async () => {
-    if (!uploadFiles.jrxml) return toast({ title: "JRXML required", variant: "destructive" });
-    if (uploadFiles.images.length === 0) return toast({ title: "At least 1 image required", variant: "destructive" });
-
-    const formData = new FormData();
-    formData.append("jrxml", uploadFiles.jrxml);
-    uploadFiles.images.forEach(img => formData.append("images", img));
-
-    try {
-      const res = await api.post("/templates/upload", formData);
-      toast({ title: "Template uploaded ✅", description: res.data.templateName });
-      setShowUploadModal(false);
-      setUploadFiles({ jrxml: null, images: [] });
-      const updated = await api.get("/templates");
-      setTemplates(updated.data);
-    } catch (err: any) {
-      toast({ title: "Upload failed ⚠️", description: err.response?.data || err.message, variant: "destructive" });
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 py-10 px-4 flex flex-col items-center gap-6">
-
-      {/* Certificate Management Card */}
-      <Card className="w-full max-w-5xl shadow-2xl rounded-3xl p-6 bg-white border border-gray-200">
+      <Card className="w-full max-w-3xl shadow-2xl rounded-3xl p-6 bg-white border border-gray-200">
         <CardHeader className="text-center mb-6">
           <CardTitle className="text-3xl md:text-4xl font-extrabold text-indigo-700">Certificate Management</CardTitle>
-          <p className="text-gray-500 mt-2 text-lg">Manage your certificates easily with Nagendra Kumar Pandey</p>
+          <p className="text-gray-500 mt-2 text-lg">Manage your certificates easily</p>
         </CardHeader>
         <CardContent>
           <select className="w-full border p-3 rounded mb-4" value={selectedTemplate?.templateName ?? ""} onChange={(e) => handleSelectTemplateByName(e.target.value)}>
@@ -183,19 +120,20 @@ export default function CertificatePage() {
           </select>
 
           {selectedTemplate && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-              {requiredFields.includes("excel") && <UploadCard title="Upload Excel" icon={<FileSpreadsheet />} accept=".xlsx,.xls" onChange={(e) => handleFileUpload("excel", e)} file={files.excel} />}
-              {requiredFields.includes("zip") && <UploadCard title="Upload ZIP" icon={<Image />} accept=".zip" onChange={(e) => handleFileUpload("zip", e)} file={files.zip} />}
-              {requiredFields.includes("logo") && <UploadCard title="Upload Logo" icon={<FileImage />} accept="image/*" onChange={(e) => handleFileUpload("logo", e)} file={files.logo} preview />}
-              {requiredFields.includes("sign") && <UploadCard title="Upload Signature" icon={<Stamp />} accept="image/*" onChange={(e) => handleFileUpload("sign", e)} file={files.sign} preview />}
-            </div>
+            <UploadCard
+              title="Upload Excel"
+              icon={<FileSpreadsheet />}
+              accept=".xlsx,.xls"
+              onChange={handleFileUpload}
+              file={files.excel}
+            />
           )}
 
           {selectedTemplate && (
             <div className="mt-6 text-center">
-              <Button onClick={handleGenerate} disabled={isUploading || requiredFields.some(f => !files[f])}
+              <Button onClick={handleGenerate} disabled={isUploading || !files.excel}
                 className="bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-3 rounded-full transition">
-                {isUploading ? <><Clock className="animate-spin mr-2 inline-block" /> Uploading...</> : <><CheckCircle className="mr-2 inline-block" /> Generate Certificates</>}
+                {isUploading ? <><Clock className="animate-spin mr-2 inline-block" /> Generating...</> : <><CheckCircle className="mr-2 inline-block" /> Generate Certificates</>}
               </Button>
             </div>
           )}

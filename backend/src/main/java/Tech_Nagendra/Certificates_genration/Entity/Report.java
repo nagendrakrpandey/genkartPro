@@ -36,7 +36,9 @@ public class Report {
     @Column(name = "training_partner")
     private String trainingPartner;
 
-    @Column(name = "batch_id")
-    private String batchId;
-}
+    @Column(name = "BatchId;")
+    private String BatchId;
 
+    private String grade;
+    private String templateName;
+}

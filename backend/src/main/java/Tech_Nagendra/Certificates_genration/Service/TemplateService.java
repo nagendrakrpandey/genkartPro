@@ -21,15 +21,14 @@ public class TemplateService {
     // Save new template with automatic common images
     public Template saveTemplate(String templateName, Integer imageType, Long userId,
                                  MultipartFile jrxml, MultipartFile[] images) throws IOException {
-        // 1️⃣ Create template folder
+
         File folder = new File("templates/" + templateName);
         if (!folder.exists()) folder.mkdirs();
 
-        // 2️⃣ Save JRXML
         File jrxmlFile = new File(folder, jrxml.getOriginalFilename());
         jrxml.transferTo(jrxmlFile);
 
-        // 3️⃣ Save template-specific images
+
         List<String> allImagePaths = new ArrayList<>();
         for (MultipartFile img : images) {
             File imgFile = new File(folder, img.getOriginalFilename());
@@ -37,7 +36,6 @@ public class TemplateService {
             allImagePaths.add(imgFile.getAbsolutePath());
         }
 
-        // 4️⃣ Add common images automatically
         File commonDir = new File("C:/certificate_storage/common_images/");
         if (commonDir.exists() && commonDir.isDirectory()) {
             for (File commonImg : Objects.requireNonNull(commonDir.listFiles())) {
@@ -45,13 +43,13 @@ public class TemplateService {
             }
         }
 
-        // 5️⃣ Save template entity
+
         Template template = new Template();
         template.setTemplateName(templateName);
         template.setImageType(imageType);
-        template.setUser_id(userId);
+        template.setUserId(userId);
         template.setTemplateFolder(folder.getAbsolutePath());
-        template.setCommon_images(String.join(",", allImagePaths));
+        template.setCommonImages(String.join(",", allImagePaths));
         template.setJrxmlPath(jrxmlFile.getAbsolutePath());
 
         return templateRepository.save(template);
@@ -91,8 +89,8 @@ public class TemplateService {
                 imagesToUse.add(imgFile);
             } else {
                 // fallback: common_images column
-                if (template.getCommon_images() != null) {
-                    String[] commonPaths = template.getCommon_images().split(",");
+                if (template.getCommonImages() != null) {
+                    String[] commonPaths = template.getCommonImages().split(",");
                     boolean found = false;
                     for (String path : commonPaths) {
                         File f = new File(path.trim());

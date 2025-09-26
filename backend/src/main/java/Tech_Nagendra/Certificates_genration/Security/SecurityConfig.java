@@ -3,7 +3,6 @@ import Tech_Nagendra.Certificates_genration.JWTfilter.JwtFilter;
 import Tech_Nagendra.Certificates_genration.Service.CustomUserDetailsService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
@@ -39,7 +38,7 @@ public class SecurityConfig {
                         .requestMatchers("/profile/**").authenticated()           // Authenticated endpoints
 //                        .requestMatchers("/profile_update").authenticated()
                                 .requestMatchers("/templates/**").permitAll()
-                                .requestMatchers("/templates/common/upload").permitAll()
+                                .requestMatchers("/certificates/**").permitAll()
                         .anyRequest().authenticated()                             // All other endpoints require auth
                 )
                 .sessionManagement(session ->
