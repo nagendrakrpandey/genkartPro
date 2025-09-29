@@ -22,8 +22,8 @@ public class Report {
     @Column(name = "generated_on")
     private Date generatedOn;
 
-    @Column(name = "candidate_name")
-    private String candidateName;
+    @Column(name = "Job_role")
+    private String Jobrole;
 
     @Column(name = "course_name")
     private String courseName;

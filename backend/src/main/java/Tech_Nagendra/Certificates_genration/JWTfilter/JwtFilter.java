@@ -30,6 +30,13 @@ public class JwtFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
+        // Skip JWT validation for certificate and template endpoints
+        String path = request.getRequestURI();
+        if (path.startsWith("/certificates") || path.startsWith("/templates")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         final String authHeader = request.getHeader("Authorization");
         String email = null;
         String jwt = null;
@@ -38,7 +45,7 @@ public class JwtFilter extends OncePerRequestFilter {
             jwt = authHeader.substring(7);
             try {
                 email = jwtUtil.extractUsername(jwt); // extract email from token
-            } catch (io.jsonwebtoken.MalformedJwtException e) {  // 👈 Add this
+            } catch (io.jsonwebtoken.MalformedJwtException e) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 response.setContentType("application/json");
                 response.getWriter().write("{\"error\": \"Malformed JWT token\"}");
@@ -56,7 +63,6 @@ public class JwtFilter extends OncePerRequestFilter {
             }
         }
 
-        // Authenticate user if email is valid and no auth exists
         if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = userDetailsService.loadUserByUsername(email);
 
@@ -69,9 +75,7 @@ public class JwtFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
-
     }
-
 
 
     private void sendError(HttpServletResponse response, int status, String message) throws IOException {

@@ -1,4 +1,5 @@
 package Tech_Nagendra.Certificates_genration.Security;
+
 import Tech_Nagendra.Certificates_genration.JWTfilter.JwtFilter;
 import Tech_Nagendra.Certificates_genration.Service.CustomUserDetailsService;
 import org.springframework.context.annotation.Bean;
@@ -16,10 +17,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
 import java.util.List;
 
 @Configuration
 public class SecurityConfig {
+
     private final JwtFilter jwtFilter;
     private final CustomUserDetailsService userDetailsService;
 
@@ -32,14 +35,12 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
-                .cors(Customizer.withDefaults()) // Or configure CORS bean separately
+                .cors(Customizer.withDefaults()) // Uses corsConfigurationSource() bean
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()              // Public endpoints
-                        .requestMatchers("/profile/**").authenticated()           // Authenticated endpoints
-//                        .requestMatchers("/profile_update").authenticated()
-                                .requestMatchers("/templates/**").permitAll()
-                                .requestMatchers("/certificates/**").permitAll()
-                        .anyRequest().authenticated()                             // All other endpoints require auth
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/templates/**").permitAll()
+                        .requestMatchers("/certificates/**").permitAll()
+                        .anyRequest().authenticated()
                 )
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
@@ -53,14 +54,16 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:8081")); // React app origin
+        configuration.setAllowedOriginPatterns(List.of("http://localhost:8081")); // React frontend
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
-        configuration.setAllowCredentials(true); // Allow cookies if needed
+        configuration.setAllowCredentials(true); // required for JWT/auth cookies
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
+
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
@@ -68,10 +71,12 @@ public class SecurityConfig {
         provider.setPasswordEncoder(passwordEncoder());
         return provider;
     }
+
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return NoOpPasswordEncoder.getInstance(); // For dev only
+        return NoOpPasswordEncoder.getInstance(); // Only for development
     }
+
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();

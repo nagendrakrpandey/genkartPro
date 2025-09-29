@@ -2,157 +2,134 @@ package Tech_Nagendra.Certificates_genration.Service;
 
 import Tech_Nagendra.Certificates_genration.Entity.CandidateDTO;
 import Tech_Nagendra.Certificates_genration.Entity.Template;
-import Tech_Nagendra.Certificates_genration.Utility.Utility;
-import org.apache.commons.io.FileUtils;
-import org.springframework.http.ResponseEntity;
+import Tech_Nagendra.Certificates_genration.Entity.TemplateImage;
+import Tech_Nagendra.Certificates_genration.Repository.TemplateRepository;
+import Tech_Nagendra.Certificates_genration.Repository.TemplateImageRepository;
+import net.sf.jasperreports.engine.*;
+import net.sf.jasperreports.engine.data.JRBeanCollectionDataSource;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.multipart.MultipartFile;
-import org.zeroturnaround.zip.ZipUtil;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.io.*;
+import java.nio.file.Files;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 @Service
 public class CertificateService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final TemplateRepository templateRepository;
+    private final TemplateImageRepository templateImageRepository;
 
-    private static File file = null;
-    private static File zipfile = null;
-    private static File logoImage = null;
-    private static File signImage = null;
-    private static List<CandidateDTO> failedCandidateList = new ArrayList<>();
-    private static int progressPercentage = 0;
-
-    // Persistent folder for generated certificates
-    private static final String CERTIFICATE_BASE_DIR = "C:/certificate_storage/Candidate_Certificates/";
-
-    // ---------------- Generate Certificates ----------------
-    public String generateCertificates(MultipartFile excelFile, MultipartFile zip,
-                                       MultipartFile logo, MultipartFile sign,
-                                       String templateId, Integer userId) throws Exception {
-
-        failedCandidateList = new ArrayList<>();
-        progressPercentage = 10;
-
-        // Create base folder if it does not exist
-        File baseFolder = new File(CERTIFICATE_BASE_DIR);
-        if (!baseFolder.exists()) baseFolder.mkdirs();
-
-        // Save Excel file
-        file = new File(CERTIFICATE_BASE_DIR + excelFile.getOriginalFilename());
-        FileUtils.writeByteArrayToFile(file, excelFile.getBytes());
-
-        // Save ZIP file if provided
-        if (zip != null && !"".equals(zip.getOriginalFilename())) {
-            zipfile = new File(CERTIFICATE_BASE_DIR + zip.getOriginalFilename());
-            FileUtils.writeByteArrayToFile(zipfile, zip.getBytes());
-            ZipUtil.unpack(zipfile, baseFolder);
-        }
-
-        // Save Logo
-        if (logo != null && !"".equals(logo.getOriginalFilename())) {
-            logoImage = new File(CERTIFICATE_BASE_DIR + "logoSignImages/" + logo.getOriginalFilename());
-            logoImage.getParentFile().mkdirs();
-            FileUtils.writeByteArrayToFile(logoImage, logo.getBytes());
-        }
-
-        // Save Sign
-        if (sign != null && !"".equals(sign.getOriginalFilename())) {
-            signImage = new File(CERTIFICATE_BASE_DIR + "logoSignImages/" + sign.getOriginalFilename());
-            signImage.getParentFile().mkdirs();
-            FileUtils.writeByteArrayToFile(signImage, sign.getBytes());
-        }
-
-        // Process and generate certificates
-        return processFile(templateId, userId);
+    public CertificateService(TemplateRepository templateRepository, TemplateImageRepository templateImageRepository) {
+        this.templateRepository = templateRepository;
+        this.templateImageRepository = templateImageRepository;
     }
 
-    // ---------------- Process Certificates ----------------
-    private String processFile(String templateId, int userId) throws Exception {
-        List<CandidateDTO> candidates = Utility.getCandidatesFromFile(file);
-        if (candidates.isEmpty()) return "Candidate Data not found.";
+    /**
+     * Generate individual PDF certificates and save them in tempDir
+     */
+    public List<File> generateCertificatesToLocal(Long templateId, File excelFile, String tempDir) throws Exception {
 
-        File outputFolder = new File(CERTIFICATE_BASE_DIR + "Output/");
-        if (!outputFolder.exists()) outputFolder.mkdirs();
+        Template template = templateRepository.findById(templateId)
+                .orElseThrow(() -> new RuntimeException("Template not found"));
+        List<TemplateImage> templateImages = templateImageRepository.findByTemplateId(templateId);
 
-        if (zipfile != null || logoImage != null || signImage != null) { // Image-enabled
-            for (CandidateDTO candidate : candidates) {
-                List<CandidateDTO> uniCandidateList = Collections.singletonList(candidate);
-                String xml = Utility.convertObjectToXML(uniCandidateList, Object.class);
-                try {
-                    String pdfPath = Utility.generateImageEnabledCertificates(xml, Integer.parseInt(templateId), candidate, logoImage, signImage);
+        File jrxmlFile = new File(template.getJrxmlPath());
+        if (!jrxmlFile.exists()) throw new FileNotFoundException("JRXML file not found");
 
-                    // Save each PDF to persistent folder
-                    File destPdf = new File(outputFolder, candidate.getCandidateName() + ".pdf");
-                    FileUtils.copyFile(new File(pdfPath), destPdf);
+        JasperReport jasperReport = JasperCompileManager.compileReport(jrxmlFile.getAbsolutePath());
 
-                } catch (Exception e) {
-                    failedCandidateList.add(candidate);
-                }
-                if (progressPercentage <= 90) progressPercentage += 5;
+        List<CandidateDTO> candidates = new ArrayList<>();
+        try (FileInputStream fis = new FileInputStream(excelFile);
+             Workbook workbook = new XSSFWorkbook(fis)) {
+
+            Sheet sheet = workbook.getSheetAt(0);
+            for (Row row : sheet) {
+                if (row.getRowNum() == 0) continue; // skip header
+
+                CandidateDTO c = new CandidateDTO();
+                c.setSalutation(getCellString(row.getCell(0)));
+                c.setCandidateName(getCellString(row.getCell(1)));
+                c.setSid(getCellString(row.getCell(2)));
+                c.setJobrole(getCellString(row.getCell(3)));
+                c.setGuardianType(getCellString(row.getCell(4)));
+                c.setFatherORHusbandName(getCellString(row.getCell(5)));
+                c.setSectorSkillCouncil(getCellString(row.getCell(6)));
+                c.setDateOfIssuance(formatDateCell(row.getCell(7)));
+                c.setLevel(getCellString(row.getCell(8)));
+                c.setAadhaarNumber(getCellString(row.getCell(9)));
+                c.setSector(getCellString(row.getCell(10)));
+                c.setGrade(getCellString(row.getCell(11)));
+                c.setDateOfStart(formatDateCell(row.getCell(12)));
+                c.setDateOfEnd(formatDateCell(row.getCell(13)));
+                c.setMarks(getCellString(row.getCell(14)));
+                c.setMarks1(getCellString(row.getCell(15)));
+                c.setMarks2(getCellString(row.getCell(16)));
+                c.setMarks3(getCellString(row.getCell(17)));
+                c.setBatchId(getCellString(row.getCell(18)));
+                c.setTemplate(template);
+
+                candidates.add(c);
             }
-            progressPercentage = 90;
+        }
 
-            writeFailedCandidateList(outputFolder.getAbsolutePath());
+        // Ensure tempDir exists
+        File dir = new File(tempDir);
+        if (!dir.exists()) dir.mkdirs();
 
-            // Zip all generated PDFs
-            File zipFile = new File(CERTIFICATE_BASE_DIR + "Certificates.zip");
-            ZipUtil.pack(outputFolder, zipFile);
-            progressPercentage = 100;
+        List<File> pdfFiles = new ArrayList<>();
 
-            return CERTIFICATE_BASE_DIR + "Certificates.zip";
-        } else { // Normal certificates (Excel only)
-            String xml = Utility.convertObjectToXML(candidates, Object.class);
-            String pdfPath = Utility.generateCertificateXML(xml, Integer.parseInt(templateId));
+        // Generate PDF for each candidate
+        for (CandidateDTO candidate : candidates) {
+            Map<String, Object> parameters = new HashMap<>();
+            int imgCounter = 1;
 
-            File destPdf = new File(outputFolder, "Certificates.pdf");
-            FileUtils.copyFile(new File(pdfPath), destPdf);
+            for (TemplateImage img : templateImages) {
+                File imgFile = new File(img.getImagePath());
+                if (!imgFile.exists()) continue;
 
-            return destPdf.getAbsolutePath();
+                // If filename contains BG -> background image
+                if (img.getImagePath().toLowerCase().contains("bg")) {
+                    parameters.put("imgParamBG", imgFile.getAbsolutePath());
+                } else {
+                    parameters.put("imgParam" + imgCounter, imgFile.getAbsolutePath());
+                    imgCounter++;
+                }
+            }
+
+            JRBeanCollectionDataSource dataSource = new JRBeanCollectionDataSource(Collections.singletonList(candidate));
+            JasperPrint jasperPrint = JasperFillManager.fillReport(jasperReport, parameters, dataSource);
+
+            File pdfFile = new File(dir, candidate.getCandidateName().replaceAll("\\s+", "_") + ".pdf");
+            JasperExportManager.exportReportToPdfStream(jasperPrint, new FileOutputStream(pdfFile));
+            pdfFiles.add(pdfFile);
+        }
+
+        return pdfFiles;
+    }
+
+    private String getCellString(Cell cell) {
+        if (cell == null) return "";
+        switch (cell.getCellType()) {
+            case STRING: return cell.getStringCellValue();
+            case NUMERIC:
+                if (DateUtil.isCellDateFormatted(cell)) return new SimpleDateFormat("dd-MM-yy").format(cell.getDateCellValue());
+                else return String.valueOf((long) cell.getNumericCellValue());
+            case BOOLEAN: return String.valueOf(cell.getBooleanCellValue());
+            case FORMULA: return cell.getCellFormula();
+            default: return "";
         }
     }
 
-    // ---------------- Write Failed Candidates ----------------
-    private void writeFailedCandidateList(String folderPath) throws IOException {
-        progressPercentage = 95;
-        String filepath = folderPath + "/Failed Candidate List.txt";
-        FileWriter writer = new FileWriter(filepath);
-        for (CandidateDTO candidate : failedCandidateList) {
-            writer.write(candidate.getSid() + " - " + candidate.getCandidateName());
-            writer.write(System.lineSeparator());
+    private String formatDateCell(Cell cell) {
+        if (cell == null) return "";
+        if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
+            return new SimpleDateFormat("dd-MM-yy").format(cell.getDateCellValue());
+        } else if (cell.getCellType() == CellType.STRING) {
+            return cell.getStringCellValue();
         }
-        writer.close();
-    }
-
-    // ---------------- Read File Bytes ----------------
-    public byte[] readFileBytes(File file) throws IOException {
-        return FileUtils.readFileToByteArray(file);
-    }
-
-    // ---------------- Progress ----------------
-    public int getProgress() {
-        return progressPercentage;
-    }
-
-    public void setProgress(int value) {
-        progressPercentage = value;
-    }
-
-    // ---------------- Fetch Templates by User ----------------
-    public Template[] getTemplatesByUser(Integer userId) throws Exception {
-        String url = "http://localhost:8086/templates?userId=" + userId;
-        ResponseEntity<Template[]> response = restTemplate.getForEntity(url, Template[].class);
-
-        if (response.getStatusCode().is2xxSuccessful()) {
-            return response.getBody();
-        } else {
-            throw new Exception("Failed to fetch templates for user " + userId);
-        }
+        return "";
     }
 }

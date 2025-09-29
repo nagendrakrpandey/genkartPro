@@ -20,8 +20,8 @@ public class CandidateDTO {
     private String fatherORHusbandName;
     private String sectorSkillCouncil;
     private String dateOfIssuance;
-    private String nsqfLevel;
-    private String aadhaarNumber; // fixed name
+    private String level;
+    private String aadhaarNumber;
     private String sector;
     private String grade;
     private String dateOfStart;
@@ -30,9 +30,9 @@ public class CandidateDTO {
     private String marks1;
     private String marks2;
     private String marks3;
-    private String batchId; // fixed name
+    private String batchId;
 
     @ManyToOne
     @JoinColumn(name="template_id")
-    private Template template; // optional: link candidate with template
+    private Template template;
 }

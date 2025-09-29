@@ -8,8 +8,6 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 @Entity
@@ -32,24 +30,19 @@ public class Template {
     private Long userId;
 
     @Column(name = "created_by")
-    private Long createdBy; // user id who uploaded
+    private Long createdBy;
 
     @CreatedDate
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+
     @Column(name = "jrxml_path")
     private String jrxmlPath;
 
+
     @Column(name = "template_folder")
     private String templateFolder;
-
-    // CSV string in DB
-    @Column(name = "image_paths")
-    private String imagePaths;
-
-    @Column(name = "common_images")
-    private String commonImages;
 
     @LastModifiedDate
     @Column(name = "modified_at")
@@ -59,14 +52,8 @@ public class Template {
     @Column(name = "modified_by")
     private String modifiedBy;
 
-    // Convert CSV to List
-    public List<String> getImagePathsList() {
-        if (imagePaths == null || imagePaths.isEmpty()) return new ArrayList<>();
-        return new ArrayList<>(Arrays.asList(imagePaths.split(",")));
-    }
-
-    public List<String> getCommonImagesList() {
-        if (commonImages == null || commonImages.isEmpty()) return new ArrayList<>();
-        return new ArrayList<>(Arrays.asList(commonImages.split(",")));
-    }
+    @ElementCollection
+    @CollectionTable(name = "template_images", joinColumns = @JoinColumn(name = "template_id"))
+    @Column(name = "image_path", nullable = false)
+    private List<String> imagePaths;
 }
