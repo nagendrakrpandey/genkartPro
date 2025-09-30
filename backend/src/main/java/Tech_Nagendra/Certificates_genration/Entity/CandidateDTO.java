@@ -7,11 +7,9 @@ import lombok.Data;
 @Data
 @Table(name = "candidates")
 public class CandidateDTO {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
     private String salutation;
     private String candidateName;
     private String sid;
@@ -31,7 +29,6 @@ public class CandidateDTO {
     private String marks2;
     private String marks3;
     private String batchId;
-
     @ManyToOne
     @JoinColumn(name="template_id")
     private Template template;

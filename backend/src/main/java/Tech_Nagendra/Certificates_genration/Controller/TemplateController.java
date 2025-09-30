@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.util.Arrays;
 import java.util.List;
 
 @RestController
@@ -15,13 +17,14 @@ public class TemplateController {
 
     private final TemplateService templateService;
 
+    // Base folder path where templates are stored
+    private final String baseTemplatePath = "C:/certificate_storage/templates/";
+
     public TemplateController(TemplateService templateService) {
         this.templateService = templateService;
     }
 
-    /**
-     * Upload a new template with JRXML file and optional images
-     */
+    // Upload a new template with JRXML and optional images
     @PostMapping(consumes = {"multipart/form-data"})
     public ResponseEntity<?> uploadTemplate(
             @RequestParam("templateName") String templateName,
@@ -39,9 +42,7 @@ public class TemplateController {
         }
     }
 
-    /**
-     * Fetch all templates
-     */
+    // Fetch all templates
     @GetMapping
     public ResponseEntity<List<Template>> getAllTemplates() {
         List<Template> list = templateService.getAllTemplates();
@@ -49,9 +50,7 @@ public class TemplateController {
         return ResponseEntity.ok(list);
     }
 
-    /**
-     * Fetch template by ID
-     */
+    // Fetch template by ID
     @GetMapping("/{id}")
     public ResponseEntity<?> getTemplateById(@PathVariable Long id) {
         try {
@@ -59,6 +58,38 @@ public class TemplateController {
             return ResponseEntity.ok(template);
         } catch (Exception e) {
             return ResponseEntity.status(404).body(e.getMessage());
+        }
+    }
+
+    // Fetch all images for a template dynamically from folder
+    @GetMapping("/{id}/images")
+    public ResponseEntity<List<String>> getTemplateImages(@PathVariable Long id) {
+        try {
+            Template template = templateService.getTemplateById(id);
+
+            // Folder path: base + templateName + /images/
+            String folderPath = baseTemplatePath + template.getTemplateName() + "/images/";
+            File folder = new File(folderPath);
+
+            if (!folder.exists() || !folder.isDirectory()) return ResponseEntity.ok(List.of());
+
+            // Filter image files
+            String[] files = folder.list((dir, name) -> {
+                String lower = name.toLowerCase();
+                return lower.endsWith(".png") || lower.endsWith(".jpg") ||
+                        lower.endsWith(".jpeg") || lower.endsWith(".gif");
+            });
+
+            // Prepare URLs for frontend
+            List<String> urls = Arrays.stream(files != null ? files : new String[0])
+                    .map(f -> "http://localhost:8086/templates/" + template.getTemplateName() + "/images/" + f)
+                    .toList();
+
+            return ResponseEntity.ok(urls);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(List.of());
         }
     }
 }

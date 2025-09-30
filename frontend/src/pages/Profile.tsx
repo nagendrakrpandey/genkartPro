@@ -122,7 +122,7 @@ const Profile: React.FC = () => {
     try {
       const wasUsernameChanged = profileData.username !== sessionStorage.getItem("username"); // Compare current vs new
 
-      await api.put("/profile/profile", {
+      await api.put("/profile", {
         name: profileData.name,
         username: profileData.username,
         email: profileData.email,
@@ -146,10 +146,10 @@ const Profile: React.FC = () => {
         err.response?.data?.message ||
         err.response?.data?.error ||
         err.message ||
-        "Failed to update profile.";
+        "Access Denied to update profile.";
 
       toast({
-        title: "Error",
+        title: "Access Denied ",
         description: errorMessage,
         variant: "destructive",
       });

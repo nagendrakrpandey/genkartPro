@@ -1,6 +1,5 @@
 package Tech_Nagendra.Certificates_genration.Entity;
 
-
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -17,13 +16,14 @@ public class Report {
     private String sid;
 
     @Column(name = "generated_by")
-    private Long generatedBy;
+    private Long generatedBy;   // kis user ne generate kiya
 
+    @Temporal(TemporalType.TIMESTAMP)
     @Column(name = "generated_on")
-    private Date generatedOn;
+    private Date generatedOn;   // kab generate hua
 
-    @Column(name = "Job_role")
-    private String Jobrole;
+    @Column(name = "job_role")
+    private String jobrole;
 
     @Column(name = "course_name")
     private String courseName;
@@ -36,9 +36,21 @@ public class Report {
     @Column(name = "training_partner")
     private String trainingPartner;
 
-    @Column(name = "BatchId;")
-    private String BatchId;
+    @Column(name = "batch_id")
+    private String batchId;
 
     private String grade;
     private String templateName;
+
+    // Tracking fields (manual update)
+    @Column(name = "modified_by")
+    private Long modifiedBy;     // kisne modify kiya
+
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "modified_on")
+    private Date modifiedOn;     // kab modify hua
+
+    // optional: store count snapshot (you can also compute counts on-the-fly)
+    @Column(name = "certificates_count")
+    private Long certificatesCount;
 }

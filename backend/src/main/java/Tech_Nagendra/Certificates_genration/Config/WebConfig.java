@@ -6,17 +6,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
+
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // Templates folder serve
         registry.addResourceHandler("/templates/**")
                 .addResourceLocations("file:///C:/certificate_storage/templates/");
-
-        // Common images folder serve
-        registry.addResourceHandler("/common-images/**")
-                .addResourceLocations("file:///C:/certificate_storage/common_images/");
+        registry.addResourceHandler("/template-images/**")
+                .addResourceLocations("file:///C:/certificate_storage/templates/");
     }
-
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
@@ -25,5 +22,4 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedHeaders("*")
                 .allowCredentials(true);
     }
-
 }

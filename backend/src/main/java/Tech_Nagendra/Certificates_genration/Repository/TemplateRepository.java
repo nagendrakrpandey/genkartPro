@@ -14,6 +14,4 @@ import java.util.Optional;
 
 public interface TemplateRepository extends JpaRepository<Template, Long> {
     Optional<Template> findByTemplateName(String templateName);
-    @Query("SELECT t.imagePaths FROM Template t WHERE t.id = :templateId")
-    List<String> getImagePathsByTemplateId(@Param("templateId") Long templateId);
 }
