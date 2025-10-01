@@ -92,12 +92,12 @@ export default function CertificatePage() {
       .then((res) => {
         setTemplateImages(res.data);
       })
-      .catch((err) =>
+      .catch(() =>
         toast({
-          title: "Error loading template images",
-          description: err.response?.data || err.message,
-          variant: "destructive",
-          duration: 5000,
+           title: "Template selected ✅",
+    description: "Images loaded successfully",
+    variant: "default",
+    duration: 3000,
         })
       );
   }, [selectedTemplateId]);

@@ -101,7 +101,7 @@ public class CertificateController {
             report.setSid(candidate.getSid());
             report.setGeneratedBy(userId);
             report.setGeneratedOn(now);
-            report.setJobrole(candidate.getJobrole());
+            report.setJobrole(candidate.getJobRole());
             report.setCourseName(candidate.getSector());
             report.setLevel(candidate.getLevel());
             report.setTemplateID(templateId);

@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   FileText,
   Users,
-  Settings,
   LogOut,
   Menu,
   Award,
@@ -23,6 +22,22 @@ export function AdminSidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Collapse sidebar automatically on tablet or smaller screens
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setIsCollapsed(true);
+      } else {
+        setIsCollapsed(false);
+      }
+    };
+
+    handleResize(); // set initial state
+    window.addEventListener("resize", handleResize);
+
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const handleLogout = () => {
     sessionStorage.removeItem("authToken");
@@ -74,9 +89,7 @@ export function AdminSidebar() {
                   isActive && "scale-110"
                 )}
               />
-              {!isCollapsed && (
-                <span className="font-medium">{item.name}</span>
-              )}
+              {!isCollapsed && <span className="font-medium">{item.name}</span>}
             </NavLink>
           );
         })}

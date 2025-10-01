@@ -9,8 +9,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Objects;
 
 @Service
 public class TemplateService {
@@ -48,15 +47,18 @@ public class TemplateService {
 
         Template savedTemplate = templateRepository.save(template);
 
-        // 4️⃣ Save images with template reference
+        // 4️⃣ Save images as TemplateImage entities
         if (images != null) {
             for (MultipartFile image : images) {
+                if (image.isEmpty()) continue;
+
                 File imgFile = new File(folder, image.getOriginalFilename());
                 image.transferTo(imgFile);
 
                 TemplateImage ti = new TemplateImage();
-                ti.setTemplate(savedTemplate); // associate template
-                ti.setImagePath(imgFile.getAbsolutePath());
+                ti.setTemplate(savedTemplate);          // associate template
+                ti.setImagePath(imgFile.getAbsolutePath()); // full path
+                ti.setImageType(imageType);               // optional
                 templateImageRepository.save(ti);
             }
         }
@@ -69,7 +71,8 @@ public class TemplateService {
                 .orElseThrow(() -> new Exception("Template not found with ID: " + id));
     }
 
-    public List<Template> getAllTemplates() {
+    public java.util.List<Template> getAllTemplates() {
         return templateRepository.findAll();
     }
 }
+

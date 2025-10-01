@@ -40,7 +40,7 @@ public class CandidateService {
                 candidate.setSalutation(getCellValue(row, 0));
                 candidate.setCandidateName(getCellValue(row, 1));
                 candidate.setSid(getCellValue(row, 2));
-                candidate.setJobrole(getCellValue(row, 3));
+                candidate.setJobRole(getCellValue(row, 3));
                 candidate.setGuardianType(getCellValue(row, 4));
                 candidate.setFatherORHusbandName(getCellValue(row, 5));
                 candidate.setSectorSkillCouncil(getCellValue(row, 6));
