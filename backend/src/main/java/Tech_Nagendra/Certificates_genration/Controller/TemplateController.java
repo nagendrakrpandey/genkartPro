@@ -19,7 +19,6 @@ public class TemplateController {
         this.templateService = templateService;
     }
 
-    // Upload template with JRXML + images
     @PostMapping(consumes = {"multipart/form-data"})
     public ResponseEntity<?> uploadTemplate(
             @RequestParam("templateName") String templateName,
@@ -37,7 +36,6 @@ public class TemplateController {
         }
     }
 
-    // Fetch all templates
     @GetMapping
     public ResponseEntity<List<Template>> getAllTemplates() {
         List<Template> list = templateService.getAllTemplates();
@@ -45,7 +43,6 @@ public class TemplateController {
         return ResponseEntity.ok(list);
     }
 
-    // Fetch template by ID
     @GetMapping("/{id}")
     public ResponseEntity<?> getTemplateById(@PathVariable Long id) {
         try {

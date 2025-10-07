@@ -2,7 +2,6 @@ package Tech_Nagendra.Certificates_genration.Service;
 
 import Tech_Nagendra.Certificates_genration.Entity.CandidateDTO;
 import Tech_Nagendra.Certificates_genration.Entity.Template;
-import Tech_Nagendra.Certificates_genration.Entity.TemplateImage;
 import Tech_Nagendra.Certificates_genration.Repository.TemplateImageRepository;
 import Tech_Nagendra.Certificates_genration.Repository.TemplateRepository;
 import net.sf.jasperreports.engine.*;
@@ -11,10 +10,16 @@ import org.apache.poi.ss.usermodel.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.FileInputStream;
+import javax.imageio.ImageIO;
+import java.awt.Font;
+import java.awt.GraphicsEnvironment;
+import java.io.*;
+import java.net.URL;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 @Service
 public class CertificateService {
@@ -25,122 +30,124 @@ public class CertificateService {
     @Autowired
     private TemplateImageRepository templateImageRepository;
 
-    /**
-     * Generates certificates in PDF for multiple candidates in a thread-safe way.
-     *
-     * @param templateId      Template ID
-     * @param excelFile       Excel containing candidate data
-     * @param uploadedFiles   Map of uploaded files (logo, sign, zipImage)
-     * @param baseOutputFolder Base folder to store PDFs
-     * @param userId          ID of the user generating certificates
-     * @return Map with generated PDFs and folder path
-     * @throws Exception
-     */
+    private static boolean fontsLoaded = false;
+
+    private synchronized void loadAllFonts() {
+        if (fontsLoaded) return;
+        try {
+            GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+            URL fontsDirURL = getClass().getResource("/fonts/");
+            if (fontsDirURL != null) {
+                File fontsDir = new File(fontsDirURL.toURI());
+                File[] files = fontsDir.listFiles((dir, name) ->
+                        name.toLowerCase().endsWith(".ttf") ||
+                                name.toLowerCase().endsWith(".otf") ||
+                                name.toLowerCase().endsWith(".jar")
+                );
+                if (files != null) {
+                    for (File f : files) {
+                        if (f.getName().toLowerCase().endsWith(".jar")) {
+                            try (java.util.jar.JarFile jar = new java.util.jar.JarFile(f)) {
+                                Enumeration<java.util.jar.JarEntry> entries = jar.entries();
+                                while (entries.hasMoreElements()) {
+                                    java.util.jar.JarEntry entry = entries.nextElement();
+                                    if (entry.getName().toLowerCase().endsWith(".ttf") ||
+                                            entry.getName().toLowerCase().endsWith(".otf")) {
+                                        try (InputStream is = jar.getInputStream(entry)) {
+                                            Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                                            ge.registerFont(font);
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            try (InputStream is = Files.newInputStream(f.toPath())) {
+                                Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                                ge.registerFont(font);
+                            }
+                        }
+                    }
+                }
+            }
+            fontsLoaded = true;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private boolean isValidImage(File file) {
+        try {
+            return file != null && file.exists() && ImageIO.read(file) != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public Map<String, Object> generateCertificatesAndReports(
             Long templateId,
             File excelFile,
             Map<String, File> uploadedFiles,
-            String baseOutputFolder,
+            String outputFolderPath,
             Long userId
     ) throws Exception {
-
         Template template = templateRepository.findById(templateId)
                 .orElseThrow(() -> new RuntimeException("Template not found"));
+        File outputFolder = new File(outputFolderPath);
+        if (!outputFolder.exists()) outputFolder.mkdirs();
+        return generateCertificates(template, excelFile, uploadedFiles, outputFolder);
+    }
 
-        validateUploadedFiles(template.getImageType(), excelFile, uploadedFiles);
+    private Map<String, Object> generateCertificates(
+            Template template,
+            File excelFile,
+            Map<String, File> uploadedFiles,
+            File outputFolder
+    ) throws Exception {
 
-        List<TemplateImage> templateImages = templateImageRepository.findByTemplateId(templateId);
+        int imageType = template.getImageType();
+        String templateFolder = template.getTemplateFolder();
+        List<File> pdfFiles = new ArrayList<>();
+        Map<String, CandidateDTO> uniqueCandidates = new HashMap<>();
 
-        List<CandidateDTO> candidates = parseExcel(excelFile, template);
+        validateUploadedFiles(imageType, excelFile, uploadedFiles);
 
-        // Remove duplicate candidates based on SID
-        Map<String, CandidateDTO> uniqueCandidates = new LinkedHashMap<>();
-        for (CandidateDTO c : candidates) {
-            uniqueCandidates.putIfAbsent(c.getSid(), c);
+        File extractedZipFolder = null;
+        if (imageType >= 1 && uploadedFiles != null && uploadedFiles.containsKey("zipImage")) {
+            extractedZipFolder = new File(outputFolder, "unzippedImages");
+            if (!extractedZipFolder.exists()) extractedZipFolder.mkdirs();
+            unzipAndRenameImages(uploadedFiles.get("zipImage"), extractedZipFolder);
         }
 
-        List<File> pdfFiles = new ArrayList<>();
-        File jrxmlFile = new File(template.getJrxmlPath());
-        JasperReport jasperReport = JasperCompileManager.compileReport(jrxmlFile.getAbsolutePath());
+        List<File> staticImages = loadStaticImages(templateFolder);
 
-        // ✅ Unique folder per request to avoid collision
-        String uniqueFolder = System.currentTimeMillis() + "_" + UUID.randomUUID();
-        File outputFolder = new File(baseOutputFolder, uniqueFolder);
-        if (!outputFolder.exists()) outputFolder.mkdirs();
-
-        for (CandidateDTO candidate : uniqueCandidates.values()) {
+        for (CandidateDTO candidate : parseExcel(excelFile, template)) {
+            uniqueCandidates.put(candidate.getSid(), candidate);
+            JasperReport jasperReport = JasperCompileManager.compileReport(template.getJrxmlPath());
             Map<String, Object> parameters = new HashMap<>();
-            fillCandidateParameters(candidate, parameters);
 
-            String templateFolder = "C:/certificate_storage/templates/" + template.getTemplateName();
-            parameters.put("IMAGE_FOLDER", templateFolder);
-
-            int imageType = template.getImageType();
-
-            if (imageType == 0) {
-                // Load all images from template folder
-                File folder = new File(templateFolder);
-                File[] files = folder.listFiles();
-                if (files != null) {
-                    int imgCount = 1;
-                    for (File f : files) {
-                        if (!f.isFile()) continue;
-                        String fileName = f.getName().toLowerCase();
-                        try {
-                            if (fileName.contains("bg")) {
-                                parameters.put("imgParamBG", f.getAbsolutePath());
-                                continue;
-                            }
-                            parameters.put("imgParam" + imgCount, f.getAbsolutePath());
-                            imgCount++;
-                        } catch (Exception e) {
-                            System.out.println("Error loading image: " + f.getAbsolutePath() + " -> " + e.getMessage());
-                        }
-                    }
-                }
-            } else {
-                // Existing logic for imageType 1,2,3
-                for (TemplateImage img : templateImages) {
-                    File f = new File(img.getImagePath());
-                    if (!f.exists()) {
-                        System.out.println("Image not found: " + img.getImagePath());
-                        continue;
-                    }
-
-                    String fileName = f.getName().toLowerCase();
-                    try {
-                        if (fileName.contains("bg")) {
-                            parameters.put("imgParamBG", f.getAbsolutePath());
-                            continue;
-                        }
-                        switch (imageType) {
-                            case 1: // only img4
-                                if (fileName.contains("img4")) parameters.put("imgParam1", f.getAbsolutePath());
-                                break;
-                            case 2: // img1 and img2
-                                if (fileName.contains("img1")) parameters.put("imgParam1", f.getAbsolutePath());
-                                if (fileName.contains("img2")) parameters.put("imgParam2", f.getAbsolutePath());
-                                break;
-                            case 3: // img1, img2, img3
-                                if (fileName.contains("img1")) parameters.put("imgParam1", f.getAbsolutePath());
-                                if (fileName.contains("img2")) parameters.put("imgParam2", f.getAbsolutePath());
-                                if (fileName.contains("img3")) parameters.put("imgParam3", f.getAbsolutePath());
-                                break;
-                        }
-                    } catch (Exception e) {
-                        System.out.println("Error loading image: " + img.getImagePath() + " -> " + e.getMessage());
-                    }
+            int imgIndex = 1;
+            for (File img : staticImages) {
+                String name = img.getName().toLowerCase();
+                if (name.contains("bg")) {
+                    parameters.put("imgParamBG", img.getAbsolutePath());
+                } else {
+                    parameters.put("imgParam" + imgIndex++, img.getAbsolutePath());
                 }
             }
 
-            // Add uploaded files as absolute paths
-            if (uploadedFiles != null) {
-                if (imageType >= 1 && uploadedFiles.containsKey("zipImage"))
-                    parameters.put("zipImage", uploadedFiles.get("zipImage").getAbsolutePath());
-                if (imageType >= 2 && uploadedFiles.containsKey("logo"))
-                    parameters.put("logo", uploadedFiles.get("logo").getAbsolutePath());
-                if (imageType == 3 && uploadedFiles.containsKey("sign"))
-                    parameters.put("sign", uploadedFiles.get("sign").getAbsolutePath());
+            if (imageType >= 1 && extractedZipFolder != null) {
+                File candidateImg = findCandidateImage(extractedZipFolder, candidate.getSid());
+                if (candidateImg != null && candidateImg.exists()) {
+                    parameters.put("imgParam4", candidateImg.getAbsolutePath());
+                }
+            }
+
+            if (imageType >= 2 && uploadedFiles != null && uploadedFiles.containsKey("logo")) {
+                parameters.put("imgParam5", uploadedFiles.get("logo").getAbsolutePath());
+            }
+
+            if (imageType == 3 && uploadedFiles != null && uploadedFiles.containsKey("sign")) {
+                parameters.put("imgParam6", uploadedFiles.get("sign").getAbsolutePath());
             }
 
             JasperPrint jasperPrint = JasperFillManager.fillReport(
@@ -149,7 +156,6 @@ public class CertificateService {
                     new JRBeanCollectionDataSource(Collections.singleton(candidate))
             );
 
-            // ✅ Filename as SID_CandidateName.pdf (no collision due to unique folder)
             String pdfName = candidate.getSid() + "_" + candidate.getCandidateName() + ".pdf";
             File pdfOut = new File(outputFolder, pdfName);
             JasperExportManager.exportReportToPdfFile(jasperPrint, pdfOut.getAbsolutePath());
@@ -159,8 +165,52 @@ public class CertificateService {
         Map<String, Object> result = new HashMap<>();
         result.put("pdfFiles", pdfFiles);
         result.put("candidates", new ArrayList<>(uniqueCandidates.values()));
-        result.put("folderPath", outputFolder.getAbsolutePath()); // optional for frontend download
+        result.put("folderPath", outputFolder.getAbsolutePath());
         return result;
+    }
+
+    private List<File> loadStaticImages(String folderPath) {
+        List<File> images = new ArrayList<>();
+        File folder = new File(folderPath);
+        if (folder.exists() && folder.isDirectory()) {
+            for (File f : Objects.requireNonNull(folder.listFiles())) {
+                if (f.isFile() && isImageFile(f.getName())) images.add(f);
+            }
+        }
+        return images;
+    }
+
+    private void unzipAndRenameImages(File zipFile, File destDir) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.isDirectory()) continue;
+                String entryName = new File(entry.getName()).getName();
+                String extension = entryName.substring(entryName.lastIndexOf('.')).toLowerCase();
+                String sidName = entryName.replaceAll("[^0-9]", "");
+                if (sidName.isEmpty()) sidName = UUID.randomUUID().toString();
+                File newFile = new File(destDir, sidName + extension);
+                try (FileOutputStream fos = new FileOutputStream(newFile)) {
+                    zis.transferTo(fos);
+                }
+            }
+        }
+    }
+
+    private File findCandidateImage(File folder, String sid) {
+        File[] files = folder.listFiles();
+        if (files == null) return null;
+        for (File f : files) {
+            String name = f.getName().toLowerCase();
+            if (name.contains(sid.toLowerCase()) && isImageFile(name)) return f;
+        }
+        return null;
+    }
+
+    private boolean isImageFile(String name) {
+        return name.toLowerCase().endsWith(".jpg") ||
+                name.toLowerCase().endsWith(".jpeg") ||
+                name.toLowerCase().endsWith(".png");
     }
 
     private void validateUploadedFiles(int imageType, File excelFile, Map<String, File> uploadedFiles) {
@@ -171,35 +221,6 @@ public class CertificateService {
             throw new RuntimeException("Logo file is required for imageType " + imageType);
         if (imageType == 3 && (uploadedFiles == null || !uploadedFiles.containsKey("sign")))
             throw new RuntimeException("Signature file is required for imageType 3");
-    }
-
-    private void fillCandidateParameters(CandidateDTO c, Map<String, Object> params) {
-        params.put("salutation", c.getSalutation());
-        params.put("candidateName", c.getCandidateName());
-        params.put("sid", c.getSid());
-        params.put("JobRole", c.getJobRole());
-        params.put("guardianType", c.getGuardianType());
-        params.put("fatherORHusbandName", c.getFatherORHusbandName());
-        params.put("sectorSkillCouncil", c.getSectorSkillCouncil());
-        params.put("dateOfIssuance", formatDate(c.getDateOfIssuance()));
-        params.put("level", c.getLevel());
-        params.put("aadhaarNumber", c.getAadhaarNumber());
-        params.put("sector", c.getSector());
-        params.put("grade", c.getGrade());
-        params.put("dateOfStart", formatDate(c.getDateOfStart()));
-        params.put("dateOfEnd", formatDate(c.getDateOfEnd()));
-        params.put("marks", c.getMarks());
-        params.put("marks1", c.getMarks1());
-        params.put("marks2", c.getMarks2());
-        params.put("marks3", c.getMarks3());
-        params.put("marks4", c.getMarks4());
-        params.put("marks5", c.getMarks5());
-        params.put("marks6", c.getMarks6());
-        params.put("marks7", c.getMarks7());
-        params.put("marks8", c.getMarks8());
-        params.put("marks9", c.getMarks9());
-        params.put("marks10", c.getMarks10());
-        params.put("batchId", c.getBatchId());
     }
 
     private List<CandidateDTO> parseExcel(File excelFile, Template template) throws Exception {
@@ -233,19 +254,23 @@ public class CertificateService {
                 dto.setMarks1(getCellValue(row.getCell(15)));
                 dto.setMarks2(getCellValue(row.getCell(16)));
                 dto.setMarks3(getCellValue(row.getCell(17)));
-                dto.setMarks3(getCellValue(row.getCell(19)));
-                dto.setMarks3(getCellValue(row.getCell(20)));
-                dto.setMarks3(getCellValue(row.getCell(21)));
-                dto.setMarks3(getCellValue(row.getCell(22)));
-                dto.setMarks3(getCellValue(row.getCell(23)));
-                dto.setMarks3(getCellValue(row.getCell(24)));
-                dto.setMarks3(getCellValue(row.getCell(25)));
-                dto.setBatchId(getCellValue(row.getCell(18)));
-
+                dto.setMarks4(getCellValue(row.getCell(18)));
+                dto.setMarks5(getCellValue(row.getCell(19)));
+                dto.setMarks6(getCellValue(row.getCell(20)));
+                dto.setMarks7(getCellValue(row.getCell(21)));
+                dto.setMarks8(getCellValue(row.getCell(22)));
+                dto.setMarks9(getCellValue(row.getCell(23)));
+                dto.setMarks10(getCellValue(row.getCell(24)));
+                dto.setBatchId(getCellValue(row.getCell(25)));
+                dto.setState(getCellValue(row.getCell(26)));
+                dto.setDistrict(getCellValue(row.getCell(27)));
+                dto.setPlace(getCellValue(row.getCell(28)));
                 dto.setTemplate(template);
+
                 candidates.add(dto);
             }
         }
+
         return candidates;
     }
 
@@ -264,16 +289,14 @@ public class CertificateService {
 
     private String formatDate(String dateStr) {
         if (dateStr == null || dateStr.isEmpty()) return "";
-        try {
-            List<String> patterns = Arrays.asList("dd/MM/yyyy", "yyyy-MM-dd", "MM/dd/yyyy");
-            for (String pattern : patterns) {
-                try {
-                    SimpleDateFormat parser = new SimpleDateFormat(pattern);
-                    Date date = parser.parse(dateStr);
-                    return new SimpleDateFormat("dd-MM-yyyy").format(date);
-                } catch (Exception ignored) {}
-            }
-        } catch (Exception ignored) {}
+        List<String> patterns = Arrays.asList("dd/MM/yyyy", "yyyy-MM-dd", "MM/dd/yyyy");
+        for (String pattern : patterns) {
+            try {
+                SimpleDateFormat parser = new SimpleDateFormat(pattern);
+                Date date = parser.parse(dateStr);
+                return new SimpleDateFormat("dd-MM-yyyy").format(date);
+            } catch (Exception ignored) {}
+        }
         return dateStr;
     }
 }

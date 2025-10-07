@@ -10,10 +10,11 @@ public class CandidateDTO {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
     private String salutation;
     private String candidateName;
     private String sid;
-    private String JobRole;
+    private String jobRole;
     private String guardianType;
     private String fatherORHusbandName;
     private String sectorSkillCouncil;
@@ -36,8 +37,9 @@ public class CandidateDTO {
     private String marks9;
     private String marks10;
     private String batchId;
-
-
+    private String state;
+    private String district;
+    private String place;
     @ManyToOne
     @JoinColumn(name="template_id")
     private Template template;

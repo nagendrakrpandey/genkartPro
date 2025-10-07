@@ -32,7 +32,6 @@ public class CertificateController {
         this.reportRepository = reportRepository;
     }
 
-    // Generate certificates and return ZIP with dynamic uploads
     @PostMapping(value = "/generate-zip/{templateId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<byte[]> generateCertificatesZip(
             @PathVariable Long templateId,
@@ -42,18 +41,15 @@ public class CertificateController {
             @RequestPart(value = "sign", required = false) MultipartFile sign,
             @RequestParam("userId") Long userId) throws Exception {
 
-        // Ensure temp folder exists
         File dir = new File(tempPath);
         if (!dir.exists()) dir.mkdirs();
 
-        // Save Excel temporarily
         File tempExcel = new File(dir, excelFile.getOriginalFilename());
         try (InputStream in = excelFile.getInputStream();
              FileOutputStream fos = new FileOutputStream(tempExcel)) {
             in.transferTo(fos);
         }
 
-        // Save optional files temporarily
         Map<String, File> uploadedFiles = new HashMap<>();
         if (zipImage != null && !zipImage.isEmpty()) {
             File tempZip = new File(dir, zipImage.getOriginalFilename());
@@ -80,7 +76,6 @@ public class CertificateController {
             uploadedFiles.put("sign", tempSign);
         }
 
-        // Call service to generate PDFs
         Map<String, Object> result = certificateService.generateCertificatesAndReports(
                 templateId,
                 tempExcel,
@@ -94,7 +89,6 @@ public class CertificateController {
         @SuppressWarnings("unchecked")
         List<CandidateDTO> candidates = (List<CandidateDTO>) result.get("candidates");
 
-        // Save report entries for each candidate
         Date now = new Date();
         for (CandidateDTO candidate : candidates) {
             Report report = new Report();
@@ -112,7 +106,6 @@ public class CertificateController {
             reportRepository.save(report);
         }
 
-        // Create ZIP of all generated PDFs
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             for (File pdf : pdfFiles) {
@@ -124,7 +117,6 @@ public class CertificateController {
             }
         }
 
-        // Cleanup temporary files
         tempExcel.delete();
         uploadedFiles.values().forEach(File::delete);
         pdfFiles.forEach(File::delete);
