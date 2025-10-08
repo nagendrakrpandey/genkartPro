@@ -8,6 +8,7 @@ import net.sf.jasperreports.engine.*;
 import net.sf.jasperreports.engine.data.JRBeanCollectionDataSource;
 import org.apache.poi.ss.usermodel.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
@@ -29,6 +30,9 @@ public class CertificateService {
 
     @Autowired
     private TemplateImageRepository templateImageRepository;
+
+    @Value("${file.upload-dir}")
+    private String baseTemplateFolder;
 
     private static boolean fontsLoaded = false;
 
@@ -83,6 +87,7 @@ public class CertificateService {
         }
     }
 
+    // 🔹 Wrapper for old controller
     public Map<String, Object> generateCertificatesAndReports(
             Long templateId,
             File excelFile,
@@ -92,12 +97,15 @@ public class CertificateService {
     ) throws Exception {
         Template template = templateRepository.findById(templateId)
                 .orElseThrow(() -> new RuntimeException("Template not found"));
+
         File outputFolder = new File(outputFolderPath);
         if (!outputFolder.exists()) outputFolder.mkdirs();
-        return generateCertificates(template, excelFile, uploadedFiles, outputFolder);
+
+        return generateCertificatesByType(template, excelFile, uploadedFiles, outputFolder);
     }
 
-    private Map<String, Object> generateCertificates(
+    // 🔹 Main dispatcher for imageType
+    public Map<String, Object> generateCertificatesByType(
             Template template,
             File excelFile,
             Map<String, File> uploadedFiles,
@@ -105,48 +113,126 @@ public class CertificateService {
     ) throws Exception {
 
         int imageType = template.getImageType();
-        String templateFolder = template.getTemplateFolder();
-        List<File> pdfFiles = new ArrayList<>();
-        Map<String, CandidateDTO> uniqueCandidates = new HashMap<>();
+        switch (imageType) {
+            case 1: return generateType1Certificates(template, excelFile, uploadedFiles, outputFolder);
+            case 2: return generateType2Certificates(template, excelFile, uploadedFiles, outputFolder);
+            case 3: return generateType3Certificates(template, excelFile, uploadedFiles, outputFolder);
+            default: return generateType0Certificates(template, excelFile, outputFolder);
+        }
+    }
 
-        validateUploadedFiles(imageType, excelFile, uploadedFiles);
+    // 🔹 Type 0: All static images
+    private Map<String, Object> generateType0Certificates(
+            Template template,
+            File excelFile,
+            File outputFolder
+    ) throws Exception {
+        return generateWithStaticImages(template, excelFile, null, outputFolder, 0);
+    }
 
+    // 🔹 Type 1: Excel + 1 dynamic image (img4)
+    private Map<String, Object> generateType1Certificates(
+            Template template,
+            File excelFile,
+            Map<String, File> uploadedFiles,
+            File outputFolder
+    ) throws Exception {
         File extractedZipFolder = null;
-        if (imageType >= 1 && uploadedFiles != null && uploadedFiles.containsKey("zipImage")) {
+        if (uploadedFiles != null && uploadedFiles.containsKey("zipImage")) {
             extractedZipFolder = new File(outputFolder, "unzippedImages");
             if (!extractedZipFolder.exists()) extractedZipFolder.mkdirs();
             unzipAndRenameImages(uploadedFiles.get("zipImage"), extractedZipFolder);
         }
+        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 1);
+    }
 
-        List<File> staticImages = loadStaticImages(templateFolder);
+    // 🔹 Type 2: Excel + ZIP(img4) + logo(img5) dynamic
+    private Map<String, Object> generateType2Certificates(
+            Template template,
+            File excelFile,
+            Map<String, File> uploadedFiles,
+            File outputFolder
+    ) throws Exception {
+        File extractedZipFolder = null;
+        if (uploadedFiles != null && uploadedFiles.containsKey("zipImage")) {
+            extractedZipFolder = new File(outputFolder, "unzippedImages");
+            if (!extractedZipFolder.exists()) extractedZipFolder.mkdirs();
+            unzipAndRenameImages(uploadedFiles.get("zipImage"), extractedZipFolder);
+        }
+        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 2, uploadedFiles);
+    }
+
+    // 🔹 Type 3: Excel + ZIP(img4) + logo(img5) + sign dynamic
+    private Map<String, Object> generateType3Certificates(
+            Template template,
+            File excelFile,
+            Map<String, File> uploadedFiles,
+            File outputFolder
+    ) throws Exception {
+        File extractedZipFolder = null;
+        if (uploadedFiles != null && uploadedFiles.containsKey("zipImage")) {
+            extractedZipFolder = new File(outputFolder, "unzippedImages");
+            if (!extractedZipFolder.exists()) extractedZipFolder.mkdirs();
+            unzipAndRenameImages(uploadedFiles.get("zipImage"), extractedZipFolder);
+        }
+        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 3, uploadedFiles);
+    }
+
+    // 🔹 Core generator for all types
+    private Map<String, Object> generateWithStaticImages(
+            Template template,
+            File excelFile,
+            File extractedZipFolder,
+            File outputFolder,
+            int imageType
+    ) throws Exception {
+        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, imageType, null);
+    }
+
+    private Map<String, Object> generateWithStaticImages(
+            Template template,
+            File excelFile,
+            File extractedZipFolder,
+            File outputFolder,
+            int imageType,
+            Map<String, File> uploadedFiles
+    ) throws Exception {
+
+        List<File> pdfFiles = new ArrayList<>();
+        Map<String, CandidateDTO> uniqueCandidates = new HashMap<>();
+
+        List<File> templateStaticImages = loadStaticImages(template.getTemplateFolder());
+        List<File> baseStaticImages = loadStaticImages(baseTemplateFolder);
 
         for (CandidateDTO candidate : parseExcel(excelFile, template)) {
             uniqueCandidates.put(candidate.getSid(), candidate);
             JasperReport jasperReport = JasperCompileManager.compileReport(template.getJrxmlPath());
             Map<String, Object> parameters = new HashMap<>();
 
+            List<File> allStaticImages = new ArrayList<>();
+            allStaticImages.addAll(templateStaticImages);
+            allStaticImages.addAll(baseStaticImages);
+
+            File bgImage = allStaticImages.stream()
+                    .filter(f -> f.getName().toLowerCase().contains("bg"))
+                    .findFirst().orElse(null);
+            if (bgImage != null) parameters.put("imgParamBG", bgImage.getAbsolutePath());
+
             int imgIndex = 1;
-            for (File img : staticImages) {
-                String name = img.getName().toLowerCase();
-                if (name.contains("bg")) {
-                    parameters.put("imgParamBG", img.getAbsolutePath());
-                } else {
-                    parameters.put("imgParam" + imgIndex++, img.getAbsolutePath());
-                }
+            for (File f : allStaticImages) {
+                if (bgImage != null && f.equals(bgImage)) continue;
+                parameters.put("imgParam" + imgIndex++, f.getAbsolutePath());
             }
 
+            // Add dynamic images based on type
             if (imageType >= 1 && extractedZipFolder != null) {
                 File candidateImg = findCandidateImage(extractedZipFolder, candidate.getSid());
-                if (candidateImg != null && candidateImg.exists()) {
-                    parameters.put("imgParam4", candidateImg.getAbsolutePath());
-                }
+                if (candidateImg != null) parameters.put("imgParam3", candidateImg.getAbsolutePath());
             }
-
             if (imageType >= 2 && uploadedFiles != null && uploadedFiles.containsKey("logo")) {
                 parameters.put("imgParam5", uploadedFiles.get("logo").getAbsolutePath());
             }
-
-            if (imageType == 3 && uploadedFiles != null && uploadedFiles.containsKey("sign")) {
+            if (imageType >= 3 && uploadedFiles != null && uploadedFiles.containsKey("sign")) {
                 parameters.put("imgParam6", uploadedFiles.get("sign").getAbsolutePath());
             }
 
@@ -187,8 +273,7 @@ public class CertificateService {
                 if (entry.isDirectory()) continue;
                 String entryName = new File(entry.getName()).getName();
                 String extension = entryName.substring(entryName.lastIndexOf('.')).toLowerCase();
-                String sidName = entryName.replaceAll("[^0-9]", "");
-                if (sidName.isEmpty()) sidName = UUID.randomUUID().toString();
+                String sidName = entryName.substring(0, entryName.lastIndexOf('.'));
                 File newFile = new File(destDir, sidName + extension);
                 try (FileOutputStream fos = new FileOutputStream(newFile)) {
                     zis.transferTo(fos);
@@ -201,8 +286,8 @@ public class CertificateService {
         File[] files = folder.listFiles();
         if (files == null) return null;
         for (File f : files) {
-            String name = f.getName().toLowerCase();
-            if (name.contains(sid.toLowerCase()) && isImageFile(name)) return f;
+            if (f.getName().toLowerCase().contains(sid.toLowerCase()) && isImageFile(f.getName()))
+                return f;
         }
         return null;
     }
@@ -213,16 +298,6 @@ public class CertificateService {
                 name.toLowerCase().endsWith(".png");
     }
 
-    private void validateUploadedFiles(int imageType, File excelFile, Map<String, File> uploadedFiles) {
-        if (excelFile == null) throw new RuntimeException("Excel file is required");
-        if (imageType >= 1 && (uploadedFiles == null || !uploadedFiles.containsKey("zipImage")))
-            throw new RuntimeException("ZIP image is required for imageType " + imageType);
-        if (imageType >= 2 && (uploadedFiles == null || !uploadedFiles.containsKey("logo")))
-            throw new RuntimeException("Logo file is required for imageType " + imageType);
-        if (imageType == 3 && (uploadedFiles == null || !uploadedFiles.containsKey("sign")))
-            throw new RuntimeException("Signature file is required for imageType 3");
-    }
-
     private List<CandidateDTO> parseExcel(File excelFile, Template template) throws Exception {
         List<CandidateDTO> candidates = new ArrayList<>();
         if (excelFile == null) return candidates;
@@ -231,10 +306,8 @@ public class CertificateService {
              Workbook workbook = WorkbookFactory.create(fis)) {
 
             Sheet sheet = workbook.getSheetAt(0);
-
             for (Row row : sheet) {
                 if (row.getRowNum() == 0) continue;
-
                 CandidateDTO dto = new CandidateDTO();
                 dto.setSalutation(getCellValue(row.getCell(0)));
                 dto.setCandidateName(getCellValue(row.getCell(1)));
@@ -266,11 +339,9 @@ public class CertificateService {
                 dto.setDistrict(getCellValue(row.getCell(27)));
                 dto.setPlace(getCellValue(row.getCell(28)));
                 dto.setTemplate(template);
-
                 candidates.add(dto);
             }
         }
-
         return candidates;
     }
 
@@ -285,18 +356,5 @@ public class CertificateService {
         } else {
             return cell.toString().trim();
         }
-    }
-
-    private String formatDate(String dateStr) {
-        if (dateStr == null || dateStr.isEmpty()) return "";
-        List<String> patterns = Arrays.asList("dd/MM/yyyy", "yyyy-MM-dd", "MM/dd/yyyy");
-        for (String pattern : patterns) {
-            try {
-                SimpleDateFormat parser = new SimpleDateFormat(pattern);
-                Date date = parser.parse(dateStr);
-                return new SimpleDateFormat("dd-MM-yyyy").format(date);
-            } catch (Exception ignored) {}
-        }
-        return dateStr;
     }
 }

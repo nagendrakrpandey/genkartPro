@@ -1,5 +1,5 @@
-"use client";
 
+"use client";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -127,7 +127,7 @@ export default function CertificatePage() {
   const handleGenerate = async () => {
     if (!selectedTemplate) return;
 
-    // Validate required files
+
     const missing = requiredFields.filter((f) => !files[f]);
     if (missing.length > 0) {
       toast({

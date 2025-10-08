@@ -41,15 +41,18 @@ public class CertificateController {
             @RequestPart(value = "sign", required = false) MultipartFile sign,
             @RequestParam("userId") Long userId) throws Exception {
 
+        // Temporary directory create
         File dir = new File(tempPath);
         if (!dir.exists()) dir.mkdirs();
 
+        // Save Excel file temporarily
         File tempExcel = new File(dir, excelFile.getOriginalFilename());
         try (InputStream in = excelFile.getInputStream();
              FileOutputStream fos = new FileOutputStream(tempExcel)) {
             in.transferTo(fos);
         }
 
+        // Save uploaded files temporarily
         Map<String, File> uploadedFiles = new HashMap<>();
         if (zipImage != null && !zipImage.isEmpty()) {
             File tempZip = new File(dir, zipImage.getOriginalFilename());
@@ -76,6 +79,7 @@ public class CertificateController {
             uploadedFiles.put("sign", tempSign);
         }
 
+        // Call service to generate certificates
         Map<String, Object> result = certificateService.generateCertificatesAndReports(
                 templateId,
                 tempExcel,
@@ -84,11 +88,13 @@ public class CertificateController {
                 userId
         );
 
+        // Extract PDFs and candidates
         @SuppressWarnings("unchecked")
         List<File> pdfFiles = (List<File>) result.get("pdfFiles");
         @SuppressWarnings("unchecked")
         List<CandidateDTO> candidates = (List<CandidateDTO>) result.get("candidates");
 
+        // Save report info in DB
         Date now = new Date();
         for (CandidateDTO candidate : candidates) {
             Report report = new Report();
@@ -106,6 +112,7 @@ public class CertificateController {
             reportRepository.save(report);
         }
 
+        // Create ZIP of PDFs
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             for (File pdf : pdfFiles) {
@@ -117,10 +124,12 @@ public class CertificateController {
             }
         }
 
+        // Cleanup temporary files
         tempExcel.delete();
         uploadedFiles.values().forEach(File::delete);
         pdfFiles.forEach(File::delete);
 
+        // Prepare response headers
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
         headers.setContentDisposition(ContentDisposition.builder("attachment")
