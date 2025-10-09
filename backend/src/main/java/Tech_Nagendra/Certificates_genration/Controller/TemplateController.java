@@ -48,6 +48,12 @@ public class TemplateController {
         return ResponseEntity.ok(list);
     }
 
+    @GetMapping("/count")
+    public ResponseEntity<Long> getTotalTemplates() {
+        Long count = templateService.getTotalTemplates();
+        return ResponseEntity.ok(count);
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getTemplateById(@PathVariable Long id) {
         try {
@@ -58,22 +64,15 @@ public class TemplateController {
         }
     }
 
-    // ✅ NEW: Endpoint to fetch template images dynamically
     @GetMapping("/{templateId}/images")
     public ResponseEntity<List<String>> getTemplateImages(@PathVariable Long templateId) {
         try {
             Template template = templateService.getTemplateById(templateId);
-            if (template == null) {
-                return ResponseEntity.status(404).body(Collections.emptyList());
-            }
+            if (template == null) return ResponseEntity.status(404).body(Collections.emptyList());
 
-            // Build folder path (where template images are stored)
             File folder = new File(templateBasePath + templateId + "/");
-            if (!folder.exists() || !folder.isDirectory()) {
-                return ResponseEntity.ok(Collections.emptyList());
-            }
+            if (!folder.exists() || !folder.isDirectory()) return ResponseEntity.ok(Collections.emptyList());
 
-            // Collect all image URLs
             List<String> imageUrls = new ArrayList<>();
             for (File file : Objects.requireNonNull(folder.listFiles())) {
                 if (file.isFile()) {
@@ -84,7 +83,6 @@ public class TemplateController {
                     }
                 }
             }
-
             return ResponseEntity.ok(imageUrls);
         } catch (Exception e) {
             e.printStackTrace();

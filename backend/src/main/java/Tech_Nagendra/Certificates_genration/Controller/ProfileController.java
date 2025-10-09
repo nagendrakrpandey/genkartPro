@@ -1,4 +1,5 @@
 package Tech_Nagendra.Certificates_genration.Controller;
+
 import Tech_Nagendra.Certificates_genration.Dto.ProfileDto;
 import Tech_Nagendra.Certificates_genration.Dto.ProfileStatsDto;
 import Tech_Nagendra.Certificates_genration.Dto.UpdatePasswordDto;
@@ -12,16 +13,23 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/profile")
 @RequiredArgsConstructor
 public class ProfileController {
+
     private final ProfileService profileService;
+
 
     private String extractToken(String header) {
         return (header != null && header.startsWith("Bearer ")) ? header.substring(7) : header;
     }
+
+    // Get Profile
     @GetMapping
     public ResponseEntity<ProfileDto> getProfile(@RequestHeader("Authorization") String token) {
         String jwt = extractToken(token);
-        return ResponseEntity.ok(profileService.getProfile(jwt));
+        ProfileDto profile = profileService.getProfile(jwt);
+        return ResponseEntity.ok(profile);
     }
+
+
     @PutMapping
     public ResponseEntity<ProfileDto> updateProfile(
             @RequestHeader("Authorization") String token,
@@ -30,6 +38,7 @@ public class ProfileController {
         ProfileDto updated = profileService.updateProfile(jwt, profileDto);
         return ResponseEntity.ok(updated);
     }
+
     @PutMapping("/password")
     public ResponseEntity<String> updatePassword(
             @RequestHeader("Authorization") String token,
@@ -40,16 +49,11 @@ public class ProfileController {
                 ? ResponseEntity.ok("Password updated successfully")
                 : ResponseEntity.badRequest().body("Current password is incorrect");
     }
-    @PostMapping("/avatar")
-    public ResponseEntity<String> uploadAvatar(
-            @RequestHeader("Authorization") String token,
-            @RequestParam("file") MultipartFile file) {
-        String jwt = extractToken(token);
-        return ResponseEntity.ok(profileService.uploadAvatar(jwt, file));
-    }
+
     @GetMapping("/stats")
     public ResponseEntity<ProfileStatsDto> getStats(@RequestHeader("Authorization") String token) {
         String jwt = extractToken(token);
-        return ResponseEntity.ok(profileService.getStats(jwt));
+        ProfileStatsDto stats = profileService.getStats(jwt);
+        return ResponseEntity.ok(stats);
     }
 }

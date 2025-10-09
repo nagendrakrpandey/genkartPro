@@ -40,6 +40,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/templates/**").permitAll()
                         .requestMatchers("/certificates/**").permitAll()
+                        .requestMatchers("/reports/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session ->
@@ -74,7 +75,7 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return NoOpPasswordEncoder.getInstance(); // Only for development
+        return NoOpPasswordEncoder.getInstance();
     }
 
     @Bean

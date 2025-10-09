@@ -116,47 +116,56 @@ const Profile: React.FC = () => {
 
 
 
-  // Update profile
-  const handleProfileUpdate = async () => {
-    setLoading(true);
-    try {
-      const wasUsernameChanged = profileData.username !== sessionStorage.getItem("username"); // Compare current vs new
-
-      await api.put("/profile", {
+ // Update profile
+const handleProfileUpdate = async () => {
+  setLoading(true);
+  try {
+    const token = sessionStorage.getItem("authToken"); // JWT from session
+    const wasUsernameChanged = profileData.username !== sessionStorage.getItem("username");
+    const res = await api.put(
+      "/profile",
+      {
         name: profileData.name,
         username: profileData.username,
         email: profileData.email,
-      });
-
-      toast({ title: "Success", description: "Profile updated successfully!" });
-
-      if (wasUsernameChanged) {
-        // Optional: delay to allow toast to show briefly before logout
-        setTimeout(() => {
-          sessionStorage.removeItem("authToken");
-          navigate("/login");
-        }, 1000);
-      } else {
-        fetchProfile(); // Only fetch if not logging out
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       }
-    } catch (err: any) {
-      console.error("Update Profile Error:", err);
+    );
+    setProfileData(res.data);
 
-      const errorMessage =
-        err.response?.data?.message ||
-        err.response?.data?.error ||
-        err.message ||
-        "Access Denied to update profile.";
+    toast({ title: "Success", description: "Profile updated successfully!" });
 
-      toast({
-        title: "Access Denied ",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+    if (wasUsernameChanged) {
+      setTimeout(() => {
+        sessionStorage.removeItem("authToken");
+        navigate("/login");
+      }, 1000);
+    } else {
+      fetchProfile(); 
     }
-  };
+  } catch (err: any) {
+    console.error("Update Profile Error:", err);
+
+    const errorMessage =
+      err.response?.data?.message ||
+      err.response?.data?.error ||
+      err.message ||
+      "Access Denied to update profile.";
+
+    toast({
+      title: "Access Denied",
+      description: errorMessage,
+      variant: "destructive",
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // Update password
   const handlePasswordUpdate = async () => {

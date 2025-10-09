@@ -1,4 +1,3 @@
-
 "use client";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +37,7 @@ function UploadCard({
   preview?: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center bg-white rounded-xl shadow-md p-4 border border-gray-200 hover:shadow-lg transition">
+    <div className="flex flex-col items-center bg-white rounded-xl shadow-md p-4 border border-gray-200 hover:shadow-lg transition w-full">
       <div className="text-indigo-600 mb-2">{icon}</div>
       <label className="text-sm font-medium mb-1">{title}</label>
       <Input type="file" accept={accept} onChange={onChange} className="mb-2 w-full max-w-xs" />
@@ -67,52 +66,52 @@ export default function CertificatePage() {
   const [templateImages, setTemplateImages] = useState<string[]>([]);
   const [files, setFiles] = useState<TemplateFiles>({ excel: null, zip: null, logo: null, sign: null });
   const [isUploading, setIsUploading] = useState(false);
-  const [userId, setUserId] = useState<number>(1); // Replace with actual logged-in user ID
+  const [errorMessage, setErrorMessage] = useState("");
+  const [userId, setUserId] = useState<number>(1);
   const { toast } = useToast();
 
-  // Fetch all templates
   useEffect(() => {
     axios
       .get("http://localhost:8086/templates")
       .then((res) => setTemplates(res.data))
       .catch((err) =>
-        toast({ title: "Error", description: err.response?.data || err.message, variant: "destructive", duration: 5000 })
+        toast({
+          title: "Error",
+          description: err.response?.data || err.message,
+          variant: "destructive",
+          duration: 5000,
+        })
       );
   }, []);
 
-  // Fetch template images when template selected
   useEffect(() => {
     if (!selectedTemplateId) {
       setTemplateImages([]);
       return;
     }
-
     axios
       .get<string[]>(`http://localhost:8086/templates/${selectedTemplateId}/images`)
-      .then((res) => {
-        setTemplateImages(res.data);
-      })
+      .then((res) => setTemplateImages(res.data))
       .catch(() =>
         toast({
-           title: "Template selected ✅",
-    description: "Images loaded successfully",
-    variant: "default",
-    duration: 3000,
+          title: "Template loaded ✅",
+          description: "Images loaded successfully",
+          variant: "default",
+          duration: 3000,
         })
       );
   }, [selectedTemplateId]);
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
-  // Determine required upload fields based on imageType
   const requiredFields = (() => {
     if (!selectedTemplate) return [];
     const type = selectedTemplate.imageType;
     const fields: (keyof TemplateFiles)[] = [];
-    if (type >= 0) fields.push("excel"); // always include Excel
-    if (type >= 1) fields.push("zip"); // type 1+
-    if (type >= 2) fields.push("logo"); // type 2+
-    if (type >= 3) fields.push("sign"); // type 3
+    if (type >= 0) fields.push("excel");
+    if (type >= 1) fields.push("zip");
+    if (type >= 2) fields.push("logo");
+    if (type >= 3) fields.push("sign");
     return fields;
   })();
 
@@ -126,7 +125,6 @@ export default function CertificatePage() {
 
   const handleGenerate = async () => {
     if (!selectedTemplate) return;
-
 
     const missing = requiredFields.filter((f) => !files[f]);
     if (missing.length > 0) {
@@ -154,14 +152,12 @@ export default function CertificatePage() {
     formData.append("userId", String(userId));
 
     setIsUploading(true);
+    setErrorMessage("");
     try {
       const res = await axios.post(
         `http://localhost:8086/certificates/generate-zip/${selectedTemplate.id}`,
         formData,
-        {
-          responseType: "blob",
-          headers: { "Content-Type": "multipart/form-data" },
-        }
+        { responseType: "blob", headers: { "Content-Type": "multipart/form-data" } }
       );
 
       const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/zip" }));
@@ -177,7 +173,8 @@ export default function CertificatePage() {
       setSelectedTemplateId(null);
       setTemplateImages([]);
     } catch (err: any) {
-      toast({ title: "Error ⚠️", description: err.response?.data || err.message, variant: "destructive", duration: 5000 });
+      console.error(err);
+      setErrorMessage("An error occurred while generating certificates. Please contact the admin.");
     } finally {
       setIsUploading(false);
     }
@@ -279,7 +276,7 @@ export default function CertificatePage() {
               >
                 {isUploading ? (
                   <>
-                    <Clock className="h-5 w-5 mr-2 animate-spin" /> Uploading...
+                    <Clock className="h-5 w-5 mr-2 animate-spin" /> Processing...
                   </>
                 ) : (
                   <>
@@ -287,10 +284,14 @@ export default function CertificatePage() {
                   </>
                 )}
               </Button>
+
+              {errorMessage && (
+                <p className="text-red-600 mt-2 font-medium">{errorMessage}</p>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
     </div>
   );
-}
+};

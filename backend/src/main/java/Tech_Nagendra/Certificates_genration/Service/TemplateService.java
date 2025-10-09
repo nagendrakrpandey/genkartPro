@@ -9,7 +9,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Objects;
+import java.util.List;
 
 @Service
 public class TemplateService {
@@ -29,15 +29,12 @@ public class TemplateService {
                                  MultipartFile jrxml,
                                  MultipartFile[] images) throws IOException {
 
-        // 1️⃣ Create folder for template
         File folder = new File("C:/certificate_storage/templates/" + templateName);
         if (!folder.exists()) folder.mkdirs();
 
-        // 2️⃣ Save JRXML file
         File jrxmlFile = new File(folder, jrxml.getOriginalFilename());
         jrxml.transferTo(jrxmlFile);
 
-        // 3️⃣ Save template entity
         Template template = new Template();
         template.setTemplateName(templateName);
         template.setImageType(imageType);
@@ -47,7 +44,6 @@ public class TemplateService {
 
         Template savedTemplate = templateRepository.save(template);
 
-        // 4️⃣ Save images as TemplateImage entities
         if (images != null) {
             for (MultipartFile image : images) {
                 if (image.isEmpty()) continue;
@@ -56,9 +52,9 @@ public class TemplateService {
                 image.transferTo(imgFile);
 
                 TemplateImage ti = new TemplateImage();
-                ti.setTemplate(savedTemplate);          // associate template
-                ti.setImagePath(imgFile.getAbsolutePath()); // full path
-                ti.setImageType(imageType);               // optional
+                ti.setTemplate(savedTemplate);
+                ti.setImagePath(imgFile.getAbsolutePath());
+                ti.setImageType(imageType);
                 templateImageRepository.save(ti);
             }
         }
@@ -71,8 +67,11 @@ public class TemplateService {
                 .orElseThrow(() -> new Exception("Template not found with ID: " + id));
     }
 
-    public java.util.List<Template> getAllTemplates() {
+    public List<Template> getAllTemplates() {
         return templateRepository.findAll();
     }
-}
 
+    public Long getTotalTemplates() {
+        return templateRepository.count();
+    }
+}

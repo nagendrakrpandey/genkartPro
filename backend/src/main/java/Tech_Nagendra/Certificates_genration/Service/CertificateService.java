@@ -1,6 +1,7 @@
 package Tech_Nagendra.Certificates_genration.Service;
 
 import Tech_Nagendra.Certificates_genration.Entity.CandidateDTO;
+import Tech_Nagendra.Certificates_genration.Entity.Report;
 import Tech_Nagendra.Certificates_genration.Entity.Template;
 import Tech_Nagendra.Certificates_genration.Repository.TemplateImageRepository;
 import Tech_Nagendra.Certificates_genration.Repository.TemplateRepository;
@@ -30,6 +31,9 @@ public class CertificateService {
 
     @Autowired
     private TemplateImageRepository templateImageRepository;
+
+    @Autowired
+    private ReportService reportService;
 
     @Value("${file.upload-dir}")
     private String baseTemplateFolder;
@@ -87,7 +91,6 @@ public class CertificateService {
         }
     }
 
-    // 🔹 Wrapper for old controller
     public Map<String, Object> generateCertificatesAndReports(
             Long templateId,
             File excelFile,
@@ -104,14 +107,12 @@ public class CertificateService {
         return generateCertificatesByType(template, excelFile, uploadedFiles, outputFolder);
     }
 
-    // 🔹 Main dispatcher for imageType
     public Map<String, Object> generateCertificatesByType(
             Template template,
             File excelFile,
             Map<String, File> uploadedFiles,
             File outputFolder
     ) throws Exception {
-
         int imageType = template.getImageType();
         switch (imageType) {
             case 1: return generateType1Certificates(template, excelFile, uploadedFiles, outputFolder);
@@ -121,7 +122,6 @@ public class CertificateService {
         }
     }
 
-    // 🔹 Type 0: All static images
     private Map<String, Object> generateType0Certificates(
             Template template,
             File excelFile,
@@ -130,7 +130,6 @@ public class CertificateService {
         return generateWithStaticImages(template, excelFile, null, outputFolder, 0);
     }
 
-    // 🔹 Type 1: Excel + 1 dynamic image (img4)
     private Map<String, Object> generateType1Certificates(
             Template template,
             File excelFile,
@@ -146,7 +145,6 @@ public class CertificateService {
         return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 1);
     }
 
-    // 🔹 Type 2: Excel + ZIP(img4) + logo(img5) dynamic
     private Map<String, Object> generateType2Certificates(
             Template template,
             File excelFile,
@@ -162,7 +160,6 @@ public class CertificateService {
         return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 2, uploadedFiles);
     }
 
-    // 🔹 Type 3: Excel + ZIP(img4) + logo(img5) + sign dynamic
     private Map<String, Object> generateType3Certificates(
             Template template,
             File excelFile,
@@ -178,7 +175,6 @@ public class CertificateService {
         return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 3, uploadedFiles);
     }
 
-    // 🔹 Core generator for all types
     private Map<String, Object> generateWithStaticImages(
             Template template,
             File excelFile,
@@ -197,18 +193,18 @@ public class CertificateService {
             int imageType,
             Map<String, File> uploadedFiles
     ) throws Exception {
-
         List<File> pdfFiles = new ArrayList<>();
         Map<String, CandidateDTO> uniqueCandidates = new HashMap<>();
-
         List<File> templateStaticImages = loadStaticImages(template.getTemplateFolder());
         List<File> baseStaticImages = loadStaticImages(baseTemplateFolder);
 
         for (CandidateDTO candidate : parseExcel(excelFile, template)) {
             uniqueCandidates.put(candidate.getSid(), candidate);
+
+            upsertCandidateToDatabase(candidate);
+
             JasperReport jasperReport = JasperCompileManager.compileReport(template.getJrxmlPath());
             Map<String, Object> parameters = new HashMap<>();
-
             List<File> allStaticImages = new ArrayList<>();
             allStaticImages.addAll(templateStaticImages);
             allStaticImages.addAll(baseStaticImages);
@@ -224,7 +220,6 @@ public class CertificateService {
                 parameters.put("imgParam" + imgIndex++, f.getAbsolutePath());
             }
 
-            // Add dynamic images based on type
             if (imageType >= 1 && extractedZipFolder != null) {
                 File candidateImg = findCandidateImage(extractedZipFolder, candidate.getSid());
                 if (candidateImg != null) parameters.put("imgParam3", candidateImg.getAbsolutePath());
@@ -253,6 +248,18 @@ public class CertificateService {
         result.put("candidates", new ArrayList<>(uniqueCandidates.values()));
         result.put("folderPath", outputFolder.getAbsolutePath());
         return result;
+    }
+
+    private void upsertCandidateToDatabase(CandidateDTO candidate) {
+        Report report = new Report();
+        report.setSid(candidate.getSid());
+        report.setCourseName(candidate.getCandidateName());
+        report.setGrade(candidate.getGrade());
+        report.setBatchId(candidate.getBatchId());
+        report.setGeneratedBy(candidate.getTemplate().getCreatedBy());
+        report.setGeneratedOn(new Date());
+        report.setTemplateName(candidate.getTemplate().getTemplateName());
+        reportService.saveOrUpdateBySid(report);
     }
 
     private List<File> loadStaticImages(String folderPath) {
@@ -304,7 +311,6 @@ public class CertificateService {
 
         try (FileInputStream fis = new FileInputStream(excelFile);
              Workbook workbook = WorkbookFactory.create(fis)) {
-
             Sheet sheet = workbook.getSheetAt(0);
             for (Row row : sheet) {
                 if (row.getRowNum() == 0) continue;

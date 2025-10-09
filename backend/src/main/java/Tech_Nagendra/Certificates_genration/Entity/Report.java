@@ -16,11 +16,11 @@ public class Report {
     private String sid;
 
     @Column(name = "generated_by")
-    private Long generatedBy;   // kis user ne generate kiya
+    private Long generatedBy;
 
     @Temporal(TemporalType.TIMESTAMP)
     @Column(name = "generated_on")
-    private Date generatedOn;   // kab generate hua
+    private Date generatedOn;
 
     @Column(name = "job_role")
     private String jobrole;
@@ -41,16 +41,12 @@ public class Report {
 
     private String grade;
     private String templateName;
-
-    // Tracking fields (manual update)
     @Column(name = "modified_by")
-    private Long modifiedBy;     // kisne modify kiya
-
+    private Long modifiedBy;
     @Temporal(TemporalType.TIMESTAMP)
     @Column(name = "modified_on")
-    private Date modifiedOn;     // kab modify hua
+    private Date modifiedOn;
 
-    // optional: store count snapshot (you can also compute counts on-the-fly)
     @Column(name = "certificates_count")
     private Long certificatesCount;
 }
