@@ -19,6 +19,8 @@ type JwtPayload = {
   sub: string;
   exp: number;
   role?: string;
+  userId?: number;
+  email?: string;
 };
 
 export default function Login() {
@@ -35,11 +37,15 @@ export default function Login() {
       const response = await api.post("/api/auth/login", formData, {
         withCredentials: true,
       });
-      const { token, message } = response.data;
-      sessionStorage.setItem("authToken", token);
-      sessionStorage.setItem("username", response.data.username);
 
+      const { token, message } = response.data;
       const decoded = jwtDecode<JwtPayload>(token);
+      const userId = decoded.userId || response.data.userid || null;
+
+      sessionStorage.setItem("authToken", token);
+      if (userId) {
+        sessionStorage.setItem("userid", String(userId));
+      }
 
       toast({
         title: "Login successful",
@@ -108,6 +114,7 @@ export default function Login() {
                   />
                 </div>
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
@@ -125,6 +132,7 @@ export default function Login() {
                   />
                 </div>
               </div>
+
               <Button
                 type="submit"
                 className="w-full bg-gradient-to-r from-primary to-primary-glow hover:shadow-lg transition-all duration-200"

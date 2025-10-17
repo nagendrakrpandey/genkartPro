@@ -5,6 +5,8 @@ import Tech_Nagendra.Certificates_genration.Entity.Report;
 import Tech_Nagendra.Certificates_genration.Entity.Template;
 import Tech_Nagendra.Certificates_genration.Repository.TemplateImageRepository;
 import Tech_Nagendra.Certificates_genration.Repository.TemplateRepository;
+import Tech_Nagendra.Certificates_genration.Repository.ProfileRepository;
+import Tech_Nagendra.Certificates_genration.Security.UserPrincipal;
 import net.sf.jasperreports.engine.*;
 import net.sf.jasperreports.engine.data.JRBeanCollectionDataSource;
 import org.apache.poi.ss.usermodel.*;
@@ -12,14 +14,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import javax.imageio.ImageIO;
-import java.awt.Font;
-import java.awt.GraphicsEnvironment;
+import java.awt.*;
 import java.io.*;
 import java.net.URL;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -31,6 +32,9 @@ public class CertificateService {
 
     @Autowired
     private TemplateImageRepository templateImageRepository;
+
+    @Autowired
+    private ProfileRepository profileRepository;
 
     @Autowired
     private ReportService reportService;
@@ -62,7 +66,7 @@ public class CertificateService {
                                     if (entry.getName().toLowerCase().endsWith(".ttf") ||
                                             entry.getName().toLowerCase().endsWith(".otf")) {
                                         try (InputStream is = jar.getInputStream(entry)) {
-                                            Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                                            java.awt.Font font = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, is);
                                             ge.registerFont(font);
                                         }
                                     }
@@ -70,7 +74,7 @@ public class CertificateService {
                             }
                         } else {
                             try (InputStream is = Files.newInputStream(f.toPath())) {
-                                Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                                java.awt.Font font = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, is);
                                 ge.registerFont(font);
                             }
                         }
@@ -83,20 +87,12 @@ public class CertificateService {
         }
     }
 
-    private boolean isValidImage(File file) {
-        try {
-            return file != null && file.exists() && ImageIO.read(file) != null;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
     public Map<String, Object> generateCertificatesAndReports(
             Long templateId,
             File excelFile,
             Map<String, File> uploadedFiles,
             String outputFolderPath,
-            Long userId
+            UserPrincipal currentUser
     ) throws Exception {
         Template template = templateRepository.findById(templateId)
                 .orElseThrow(() -> new RuntimeException("Template not found"));
@@ -104,85 +100,79 @@ public class CertificateService {
         File outputFolder = new File(outputFolderPath);
         if (!outputFolder.exists()) outputFolder.mkdirs();
 
-        return generateCertificatesByType(template, excelFile, uploadedFiles, outputFolder);
+        return generateCertificatesByType(template, excelFile, uploadedFiles, outputFolder, currentUser);
     }
 
     public Map<String, Object> generateCertificatesByType(
             Template template,
             File excelFile,
             Map<String, File> uploadedFiles,
-            File outputFolder
+            File outputFolder,
+            UserPrincipal currentUser
     ) throws Exception {
         int imageType = template.getImageType();
         switch (imageType) {
-            case 1: return generateType1Certificates(template, excelFile, uploadedFiles, outputFolder);
-            case 2: return generateType2Certificates(template, excelFile, uploadedFiles, outputFolder);
-            case 3: return generateType3Certificates(template, excelFile, uploadedFiles, outputFolder);
-            default: return generateType0Certificates(template, excelFile, outputFolder);
+            case 1:
+                return generateType1Certificates(template, excelFile, uploadedFiles, outputFolder, currentUser);
+            case 2:
+                return generateType2Certificates(template, excelFile, uploadedFiles, outputFolder, currentUser);
+            case 3:
+                return generateType3Certificates(template, excelFile, uploadedFiles, outputFolder, currentUser);
+            default:
+                return generateType0Certificates(template, excelFile, outputFolder, currentUser);
         }
     }
 
     private Map<String, Object> generateType0Certificates(
             Template template,
             File excelFile,
-            File outputFolder
+            File outputFolder,
+            UserPrincipal currentUser
     ) throws Exception {
-        return generateWithStaticImages(template, excelFile, null, outputFolder, 0);
+        return generateWithStaticImages(template, excelFile, null, outputFolder, 0, null, currentUser);
     }
 
     private Map<String, Object> generateType1Certificates(
             Template template,
             File excelFile,
             Map<String, File> uploadedFiles,
-            File outputFolder
+            File outputFolder,
+            UserPrincipal currentUser
     ) throws Exception {
-        File extractedZipFolder = null;
-        if (uploadedFiles != null && uploadedFiles.containsKey("zipImage")) {
-            extractedZipFolder = new File(outputFolder, "unzippedImages");
-            if (!extractedZipFolder.exists()) extractedZipFolder.mkdirs();
-            unzipAndRenameImages(uploadedFiles.get("zipImage"), extractedZipFolder);
-        }
-        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 1);
+        File extractedZipFolder = extractZipImages(uploadedFiles, outputFolder);
+        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 1, uploadedFiles, currentUser);
     }
 
     private Map<String, Object> generateType2Certificates(
             Template template,
             File excelFile,
             Map<String, File> uploadedFiles,
-            File outputFolder
+            File outputFolder,
+            UserPrincipal currentUser
     ) throws Exception {
-        File extractedZipFolder = null;
-        if (uploadedFiles != null && uploadedFiles.containsKey("zipImage")) {
-            extractedZipFolder = new File(outputFolder, "unzippedImages");
-            if (!extractedZipFolder.exists()) extractedZipFolder.mkdirs();
-            unzipAndRenameImages(uploadedFiles.get("zipImage"), extractedZipFolder);
-        }
-        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 2, uploadedFiles);
+        File extractedZipFolder = extractZipImages(uploadedFiles, outputFolder);
+        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 2, uploadedFiles, currentUser);
     }
 
     private Map<String, Object> generateType3Certificates(
             Template template,
             File excelFile,
             Map<String, File> uploadedFiles,
-            File outputFolder
+            File outputFolder,
+            UserPrincipal currentUser
     ) throws Exception {
-        File extractedZipFolder = null;
-        if (uploadedFiles != null && uploadedFiles.containsKey("zipImage")) {
-            extractedZipFolder = new File(outputFolder, "unzippedImages");
-            if (!extractedZipFolder.exists()) extractedZipFolder.mkdirs();
-            unzipAndRenameImages(uploadedFiles.get("zipImage"), extractedZipFolder);
-        }
-        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 3, uploadedFiles);
+        File extractedZipFolder = extractZipImages(uploadedFiles, outputFolder);
+        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, 3, uploadedFiles, currentUser);
     }
 
-    private Map<String, Object> generateWithStaticImages(
-            Template template,
-            File excelFile,
-            File extractedZipFolder,
-            File outputFolder,
-            int imageType
-    ) throws Exception {
-        return generateWithStaticImages(template, excelFile, extractedZipFolder, outputFolder, imageType, null);
+    private File extractZipImages(Map<String, File> uploadedFiles, File outputFolder) throws IOException {
+        if (uploadedFiles != null && uploadedFiles.containsKey("zipImage")) {
+            File extractedZipFolder = new File(outputFolder, "unzippedImages");
+            if (!extractedZipFolder.exists()) extractedZipFolder.mkdirs();
+            unzipAndRenameImages(uploadedFiles.get("zipImage"), extractedZipFolder);
+            return extractedZipFolder;
+        }
+        return null;
     }
 
     private Map<String, Object> generateWithStaticImages(
@@ -191,7 +181,8 @@ public class CertificateService {
             File extractedZipFolder,
             File outputFolder,
             int imageType,
-            Map<String, File> uploadedFiles
+            Map<String, File> uploadedFiles,
+            UserPrincipal currentUser
     ) throws Exception {
         List<File> pdfFiles = new ArrayList<>();
         Map<String, CandidateDTO> uniqueCandidates = new HashMap<>();
@@ -201,7 +192,18 @@ public class CertificateService {
         for (CandidateDTO candidate : parseExcel(excelFile, template)) {
             uniqueCandidates.put(candidate.getSid(), candidate);
 
-            upsertCandidateToDatabase(candidate);
+            Report report = new Report();
+            report.setSid(candidate.getSid());
+            report.setCourseName(candidate.getCandidateName());
+            report.setGrade(candidate.getGrade());
+            report.setBatchId(candidate.getBatchId());
+            report.setTemplateName(candidate.getTemplate() != null ? candidate.getTemplate().getTemplateName() : null);
+            report.setJobrole(candidate.getJobRole());
+            report.setLevel(candidate.getLevel());
+            // Set template relationship instead of templateID
+            report.setTemplate(candidate.getTemplate());
+
+            reportService.saveOrUpdateBySid(report, currentUser);
 
             JasperReport jasperReport = JasperCompileManager.compileReport(template.getJrxmlPath());
             Map<String, Object> parameters = new HashMap<>();
@@ -250,24 +252,15 @@ public class CertificateService {
         return result;
     }
 
-    private void upsertCandidateToDatabase(CandidateDTO candidate) {
-        Report report = new Report();
-        report.setSid(candidate.getSid());
-        report.setCourseName(candidate.getCandidateName());
-        report.setGrade(candidate.getGrade());
-        report.setBatchId(candidate.getBatchId());
-        report.setGeneratedBy(candidate.getTemplate().getCreatedBy());
-        report.setGeneratedOn(new Date());
-        report.setTemplateName(candidate.getTemplate().getTemplateName());
-        reportService.saveOrUpdateBySid(report);
-    }
-
     private List<File> loadStaticImages(String folderPath) {
         List<File> images = new ArrayList<>();
         File folder = new File(folderPath);
         if (folder.exists() && folder.isDirectory()) {
-            for (File f : Objects.requireNonNull(folder.listFiles())) {
-                if (f.isFile() && isImageFile(f.getName())) images.add(f);
+            File[] files = folder.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    if (f.isFile() && isImageFile(f.getName())) images.add(f);
+                }
             }
         }
         return images;
@@ -283,8 +276,13 @@ public class CertificateService {
                 String sidName = entryName.substring(0, entryName.lastIndexOf('.'));
                 File newFile = new File(destDir, sidName + extension);
                 try (FileOutputStream fos = new FileOutputStream(newFile)) {
-                    zis.transferTo(fos);
+                    byte[] buffer = new byte[1024];
+                    int length;
+                    while ((length = zis.read(buffer)) > 0) {
+                        fos.write(buffer, 0, length);
+                    }
                 }
+                zis.closeEntry();
             }
         }
     }
@@ -302,18 +300,23 @@ public class CertificateService {
     private boolean isImageFile(String name) {
         return name.toLowerCase().endsWith(".jpg") ||
                 name.toLowerCase().endsWith(".jpeg") ||
-                name.toLowerCase().endsWith(".png");
+                name.toLowerCase().endsWith(".png") ||
+                name.toLowerCase().endsWith(".gif") ||
+                name.toLowerCase().endsWith(".bmp");
     }
 
     private List<CandidateDTO> parseExcel(File excelFile, Template template) throws Exception {
         List<CandidateDTO> candidates = new ArrayList<>();
         if (excelFile == null) return candidates;
-
         try (FileInputStream fis = new FileInputStream(excelFile);
              Workbook workbook = WorkbookFactory.create(fis)) {
             Sheet sheet = workbook.getSheetAt(0);
             for (Row row : sheet) {
-                if (row.getRowNum() == 0) continue;
+                if (row.getRowNum() == 0) continue; // Skip header row
+
+                // Skip empty rows
+                if (isRowEmpty(row)) continue;
+
                 CandidateDTO dto = new CandidateDTO();
                 dto.setSalutation(getCellValue(row.getCell(0)));
                 dto.setCandidateName(getCellValue(row.getCell(1)));
@@ -345,22 +348,88 @@ public class CertificateService {
                 dto.setDistrict(getCellValue(row.getCell(27)));
                 dto.setPlace(getCellValue(row.getCell(28)));
                 dto.setTemplate(template);
-                candidates.add(dto);
+
+                if (isValidCandidate(dto)) {
+                    candidates.add(dto);
+                }
             }
         }
         return candidates;
     }
 
+    private boolean isRowEmpty(Row row) {
+        if (row == null) return true;
+        for (int i = row.getFirstCellNum(); i < row.getLastCellNum(); i++) {
+            Cell cell = row.getCell(i);
+            if (cell != null && cell.getCellType() != CellType.BLANK) {
+                String value = getCellValue(cell);
+                if (value != null && !value.trim().isEmpty()) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private boolean isValidCandidate(CandidateDTO candidate) {
+        return candidate.getSid() != null && !candidate.getSid().trim().isEmpty() &&
+                candidate.getCandidateName() != null && !candidate.getCandidateName().trim().isEmpty();
+    }
+
     private String getCellValue(Cell cell) {
         if (cell == null) return "";
-        if (cell.getCellType() == CellType.NUMERIC) {
-            if (DateUtil.isCellDateFormatted(cell)) {
-                SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
-                return sdf.format(cell.getDateCellValue());
+        try {
+            switch (cell.getCellType()) {
+                case STRING:
+                    return cell.getStringCellValue().trim();
+                case NUMERIC:
+                    if (DateUtil.isCellDateFormatted(cell)) {
+                        SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
+                        return sdf.format(cell.getDateCellValue());
+                    }
+                    // Check if it's an integer value
+                    double numValue = cell.getNumericCellValue();
+                    if (numValue == Math.floor(numValue)) {
+                        return String.valueOf((long) numValue);
+                    } else {
+                        return String.valueOf(numValue);
+                    }
+                case BOOLEAN:
+                    return String.valueOf(cell.getBooleanCellValue());
+                case FORMULA:
+                    // Handle formula cells by evaluating them first
+                    try {
+                        FormulaEvaluator evaluator = cell.getSheet().getWorkbook().getCreationHelper().createFormulaEvaluator();
+                        CellValue cellValue = evaluator.evaluate(cell);
+                        // Now handle the evaluated cell value based on its type
+                        switch (cellValue.getCellType()) {
+                            case STRING:
+                                return cellValue.getStringValue().trim();
+                            case NUMERIC:
+                                if (DateUtil.isCellDateFormatted(cell)) {
+                                    SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
+                                    return sdf.format(cellValue.getNumberValue());
+                                }
+                                double formulaNumValue = cellValue.getNumberValue();
+                                if (formulaNumValue == Math.floor(formulaNumValue)) {
+                                    return String.valueOf((long) formulaNumValue);
+                                } else {
+                                    return String.valueOf(formulaNumValue);
+                                }
+                            case BOOLEAN:
+                                return String.valueOf(cellValue.getBooleanValue());
+                            default:
+                                return "";
+                        }
+                    } catch (Exception e) {
+                        // If evaluation fails, return the formula string
+                        return cell.getCellFormula();
+                    }
+                default:
+                    return "";
             }
-            return String.valueOf((long) cell.getNumericCellValue());
-        } else {
-            return cell.toString().trim();
+        } catch (Exception e) {
+            return "";
         }
     }
-}
+    }

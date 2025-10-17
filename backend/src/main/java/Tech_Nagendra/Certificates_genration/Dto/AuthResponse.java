@@ -9,12 +9,11 @@ import lombok.NoArgsConstructor;
     @NoArgsConstructor
 @Builder
     public class AuthResponse {
-        private boolean success;
-        private int status;
-        private String message;
-        private String username;
-        private String email;
-        private String token;
-
+    private boolean success;
+    private int status;
+    private String message;
+    private String username;
+    private String email;
+    private String token;
 
 }

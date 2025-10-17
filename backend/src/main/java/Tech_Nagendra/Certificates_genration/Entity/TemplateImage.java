@@ -1,5 +1,6 @@
 package Tech_Nagendra.Certificates_genration.Entity;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -15,11 +16,22 @@ public class TemplateImage {
     @Column(name = "image_path")
     private String imagePath;
 
-    @ManyToOne
-    @JoinColumn(name = "template_id")
-    private Template template;
-
     @Column(name = "image_type")
     private Integer imageType;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "template_id")
+    @JsonBackReference
+    private Template template;
+
+
+    @Override
+    public String toString() {
+        return "TemplateImage{" +
+                "id=" + id +
+                ", imagePath='" + imagePath + '\'' +
+                ", imageType=" + imageType +
+                ", templateId=" + (template != null ? template.getId() : null) +
+                '}';
+    }
 }

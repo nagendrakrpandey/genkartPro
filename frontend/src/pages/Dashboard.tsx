@@ -29,27 +29,36 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const token = sessionStorage.getItem("authToken");
+
   const generateCertificates = async () => {
     try {
       setLoading(true);
       setError("");
-      // Replace with your certificate generation API
-      const res = await fetch("http://localhost:8086/certificates/generate", { method: "POST" });
+      const res = await fetch("http://localhost:8086/certificates/generate", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!res.ok) throw new Error("Certificate generation failed");
       const data = await res.json();
-      // Refresh reports after generation
       setReports(data);
       setTotalCertificates(data.length);
     } catch (err) {
       console.error(err);
-      setError("An error occurred while generating certificates. Please contact the admin.");
+      setError(
+        "An error occurred while generating certificates. Please contact the admin."
+      );
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetch("http://localhost:8086/reports/all")
+    if (!token) return setError("User not logged in");
+
+    fetch("http://localhost:8086/reports/all", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => res.json())
       .then((data) => {
         setReports(data);
@@ -57,16 +66,20 @@ export default function Dashboard() {
       })
       .catch((err) => console.error(err));
 
-    fetch("http://localhost:8086/reports/count/month")
+    fetch("http://localhost:8086/reports/count/month", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => res.json())
       .then((count) => setThisMonth(count))
       .catch((err) => console.error(err));
 
-    fetch("http://localhost:8086/templates/count")
+    fetch("http://localhost:8086/templates/count", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => res.json())
       .then((count) => setTotalTemplates(count))
       .catch((err) => console.error(err));
-  }, []);
+  }, [token]);
 
   const monthlyData = Array.from({ length: 12 }, (_, i) => {
     const monthReports = reports.filter(
@@ -221,7 +234,7 @@ export default function Dashboard() {
                       variant="outline"
                       size="sm"
                       className="w-full group-hover:bg-primary group-hover:text-white transition-colors"
-                      onClick={() => window.location.href = action.href}
+                      onClick={() => (window.location.href = action.href)}
                     >
                       Get Started
                     </Button>

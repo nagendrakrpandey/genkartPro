@@ -9,5 +9,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ProfileStatsDto {
     private int totalCertificates;
-    private int completedTasks;
+    private int activeCertificates;
+    private String lastLogin;
+
+
 }
+

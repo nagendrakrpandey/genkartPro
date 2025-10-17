@@ -1,9 +1,12 @@
 package Tech_Nagendra.Certificates_genration.Controller;
-
 import Tech_Nagendra.Certificates_genration.Entity.CandidateDTO;
 import Tech_Nagendra.Certificates_genration.Entity.Report;
+import Tech_Nagendra.Certificates_genration.Entity.UserProfile;
+import Tech_Nagendra.Certificates_genration.Security.UserPrincipal;
 import Tech_Nagendra.Certificates_genration.Service.CertificateService;
 import Tech_Nagendra.Certificates_genration.Service.ReportService;
+import Tech_Nagendra.Certificates_genration.Repository.ProfileRepository;
+import Tech_Nagendra.Certificates_genration.Utility.JwtUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -22,14 +25,20 @@ public class CertificateController {
 
     private final CertificateService certificateService;
     private final ReportService reportService;
+    private final ProfileRepository profileRepository;
+    private final JwtUtil jwtUtil;
 
     @Value("${certificate.temp.path:C:/certificate_storage/certificates}")
     private String tempPath;
 
     public CertificateController(CertificateService certificateService,
-                                 ReportService reportService) {
+                                 ReportService reportService,
+                                 ProfileRepository profileRepository,
+                                 JwtUtil jwtUtil) {
         this.certificateService = certificateService;
         this.reportService = reportService;
+        this.profileRepository = profileRepository;
+        this.jwtUtil = jwtUtil;
     }
 
     @PostMapping(value = "/generate-zip/{templateId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -39,81 +48,83 @@ public class CertificateController {
             @RequestPart(value = "zipImage", required = false) MultipartFile zipImage,
             @RequestPart(value = "logo", required = false) MultipartFile logo,
             @RequestPart(value = "sign", required = false) MultipartFile sign,
-            @RequestParam("userId") Long userId) throws Exception {
+            @RequestHeader("Authorization") String tokenHeader) throws Exception {
 
+        // Extract userId from token
+        String token = tokenHeader.startsWith("Bearer ") ? tokenHeader.substring(7) : tokenHeader;
+        Long userId = jwtUtil.extractUserId(token);
+
+        UserProfile userProfile = profileRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Convert UserProfile to UserPrincipal
+        UserPrincipal currentUser = new UserPrincipal(userProfile);
+
+        // Create temp folder
         File dir = new File(tempPath);
         if (!dir.exists()) dir.mkdirs();
 
-        // Save uploaded Excel temporarily
-        File tempExcel = new File(dir, excelFile.getOriginalFilename());
-        try (InputStream in = excelFile.getInputStream();
-             FileOutputStream fos = new FileOutputStream(tempExcel)) {
+        // Save Excel to temp
+        File tempExcel = new File(dir, System.currentTimeMillis() + "_" + excelFile.getOriginalFilename());
+        try (InputStream in = excelFile.getInputStream(); FileOutputStream fos = new FileOutputStream(tempExcel)) {
             in.transferTo(fos);
         }
 
+        // Save uploaded files
         Map<String, File> uploadedFiles = new HashMap<>();
         if (zipImage != null && !zipImage.isEmpty()) saveTempFile(uploadedFiles, zipImage, dir, "zipImage");
         if (logo != null && !logo.isEmpty()) saveTempFile(uploadedFiles, logo, dir, "logo");
         if (sign != null && !sign.isEmpty()) saveTempFile(uploadedFiles, sign, dir, "sign");
 
-        // Generate certificates and get PDF files and candidate data
+        // Generate certificates and reports
         Map<String, Object> result = certificateService.generateCertificatesAndReports(
                 templateId,
                 tempExcel,
                 uploadedFiles.isEmpty() ? null : uploadedFiles,
                 tempPath,
-                userId
+                currentUser
         );
 
         List<File> pdfFiles = (List<File>) result.get("pdfFiles");
         List<CandidateDTO> candidates = (List<CandidateDTO>) result.get("candidates");
 
-        Date now = new Date();
         for (CandidateDTO candidate : candidates) {
-            Report report = new Report();
-            report.setSid(candidate.getSid());
-            report.setGeneratedBy(userId);
-            report.setGeneratedOn(now);
-            report.setJobrole(candidate.getJobRole());
-            report.setCourseName(candidate.getSector());
-            report.setLevel(candidate.getLevel());
-            report.setTemplateID(templateId);
-            report.setTrainingPartner(candidate.getSectorSkillCouncil());
-            report.setBatchId(candidate.getBatchId());
-            report.setGrade(candidate.getGrade());
-            report.setTemplateName(candidate.getTemplate() != null ? candidate.getTemplate().getTemplateName() : null);
-
-
-            reportService.saveOrUpdateBySid(report);
+            reportService.saveCandidateReport(candidate, templateId, userId, currentUser);
         }
 
-        // Create ZIP from PDF files
+        // Create ZIP
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-            for (File pdf : pdfFiles) {
+            int size = Math.min(pdfFiles.size(), candidates.size());
+            for (int i = 0; i < size; i++) {
+                File pdf = pdfFiles.get(i);
+                CandidateDTO candidate = candidates.get(i);
                 if (pdf.exists()) {
-                    zos.putNextEntry(new ZipEntry(pdf.getName()));
+                    String safeName = candidate.getCandidateName() != null
+                            ? candidate.getCandidateName().replaceAll("[^a-zA-Z0-9]", "_")
+                            : "Candidate";
+                    String zipEntryName = safeName + "_" + candidate.getSid() + ".pdf";
+                    zos.putNextEntry(new ZipEntry(zipEntryName));
                     Files.copy(pdf.toPath(), zos);
                     zos.closeEntry();
                 }
             }
         }
 
-        // Cleanup temporary files
+        // Cleanup temp files
         tempExcel.delete();
         uploadedFiles.values().forEach(File::delete);
         pdfFiles.forEach(File::delete);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-        headers.setContentDisposition(ContentDisposition.builder("attachment")
-                .filename("certificates.zip").build());
+        headers.setContentDisposition(ContentDisposition.builder("attachment").filename("certificates.zip").build());
 
         return new ResponseEntity<>(baos.toByteArray(), headers, HttpStatus.OK);
     }
 
     private void saveTempFile(Map<String, File> uploadedFiles, MultipartFile file, File dir, String key) throws IOException {
-        File temp = new File(dir, file.getOriginalFilename());
+        File temp = new File(dir, System.currentTimeMillis() + "_" + file.getOriginalFilename());
         try (InputStream in = file.getInputStream(); FileOutputStream fos = new FileOutputStream(temp)) {
             in.transferTo(fos);
         }
@@ -121,18 +132,16 @@ public class CertificateController {
     }
 
     @GetMapping("/reports/all")
-    public ResponseEntity<List<Report>> getAllReports() {
-        return ResponseEntity.ok(reportService.getAllReports());
-    }
+    public ResponseEntity<List<Report>> getAllReports(@RequestHeader("Authorization") String tokenHeader) {
+        String token = tokenHeader.startsWith("Bearer ") ? tokenHeader.substring(7) : tokenHeader;
+        Long userId = jwtUtil.extractUserId(token);
 
-    @GetMapping("/reports/user/{userId}")
-    public ResponseEntity<List<Report>> getReportsByUser(@PathVariable Long userId) {
-        return ResponseEntity.ok(reportService.getReportsByUser(userId));
-    }
+        UserProfile userProfile = profileRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-    @GetMapping("/reports/count/user/{userId}")
-    public ResponseEntity<Long> countReportsByUser(@PathVariable Long userId) {
-        return ResponseEntity.ok(reportService.countCertificatesByUser(userId));
+        UserPrincipal currentUser = new UserPrincipal(userProfile);
+
+        return ResponseEntity.ok(reportService.getAllReports(currentUser));
     }
 
     @GetMapping("/reports/count/month")

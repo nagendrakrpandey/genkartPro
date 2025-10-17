@@ -14,4 +14,6 @@ import java.util.Optional;
 
 public interface TemplateRepository extends JpaRepository<Template, Long> {
     Optional<Template> findByTemplateName(String templateName);
+    List<Template> findByCreatedBy_Id(Long userId);
+    Long countByCreatedBy_Id(Long userId);
 }

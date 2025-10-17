@@ -1,400 +1,420 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+"use client";
+
+import React, { useState, useEffect } from "react";
+import api from "@/Services/api";
+import DataTable, { TableColumn } from "react-data-table-component";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Download,
-  FileText,
-  Calendar,
-  Search,
-  Filter,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-} from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import * as XLSX from "xlsx";
 
-const certificateReports = [
-  {
-    id: 1,
-    fileName: "course_completion_batch_1.xlsx",
-    templateName: "Achievement Certificate",
-    generatedBy: "John Doe",
-    generatedCount: 45,
-    downloadCount: 42,
-    status: "completed",
-    createdAt: "2024-01-15 14:30",
-    lastDownload: "2024-01-16 09:15",
-  },
-  {
-    id: 2,
-    fileName: "workshop_participants.xlsx",
-    templateName: "Participation Certificate",
-    generatedBy: "Jane Smith",
-    generatedCount: 23,
-    downloadCount: 20,
-    status: "completed",
-    createdAt: "2024-01-14 11:20",
-    lastDownload: "2024-01-15 16:45",
-  },
-  {
-    id: 3,
-    fileName: "excellence_awards_q1.xlsx",
-    templateName: "Excellence Certificate",
-    generatedBy: "Mike Johnson",
-    generatedCount: 15,
-    downloadCount: 0,
-    status: "processing",
-    createdAt: "2024-01-16 10:00",
-    lastDownload: "-",
-  },
-  {
-    id: 4,
-    fileName: "training_completion.xlsx",
-    templateName: "Achievement Certificate",
-    generatedBy: "Sarah Wilson",
-    generatedCount: 67,
-    downloadCount: 65,
-    status: "completed",
-    createdAt: "2024-01-13 16:15",
-    lastDownload: "2024-01-14 08:30",
-  },
-  {
-    id: 5,
-    fileName: "seminar_attendance.xlsx",
-    templateName: "Participation Certificate",
-    generatedBy: "David Brown",
-    generatedCount: 0,
-    downloadCount: 0,
-    status: "failed",
-    createdAt: "2024-01-12 13:45",
-    lastDownload: "-",
-  },
-];
+interface ReportData {
+  id: number;
+  sid?: string;
+  courseName?: string;
+  templateName?: string;
+  jobrole?: string;
+  level?: string;
+  batchId?: string;
+  trainingPartner?: string;
+  generatedById?: number;
+  userProfileId?: number;
+  generatedOn?: string;
+  status?: string;
+  grade?: string;
+}
 
-export default function Reports() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [selectedReports, setSelectedReports] = useState<number[]>([]);
+interface ReportsPageProps {
+  isAdmin: boolean;
+  userId?: number;
+}
+
+export default function ReportsPage({ isAdmin, userId }: ReportsPageProps) {
   const { toast } = useToast();
+  const [reports, setReports] = useState<ReportData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [fromDate, setFromDate] = useState<Date | null>(null);
+  const [toDate, setToDate] = useState<Date | null>(null);
+  const [totalRows, setTotalRows] = useState(0);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
-  const filteredReports = certificateReports.filter((report) => {
-    const matchesSearch = 
-      report.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      report.templateName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      report.generatedBy.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === "all" || report.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle className="h-4 w-4 text-success" />;
-      case "processing":
-        return <Clock className="h-4 w-4 text-warning animate-pulse" />;
-      case "failed":
-        return <AlertCircle className="h-4 w-4 text-destructive" />;
-      default:
-        return null;
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      completed: "default",
-      processing: "secondary",
-      failed: "destructive",
-    } as const;
-    
-    return (
-      <Badge variant={variants[status as keyof typeof variants] || "secondary"}>
-        {status}
-      </Badge>
-    );
-  };
-
-  const handleExportSelected = (format: "excel" | "pdf") => {
-    if (selectedReports.length === 0) {
+  // Fetch reports by date range
+  const fetchReports = async () => {
+    if (!fromDate || !toDate) {
       toast({
-        title: "No reports selected",
-        description: "Please select at least one report to export",
+        title: "Warning",
+        description: "Please select both From Date and To Date",
         variant: "destructive",
       });
       return;
     }
 
+    setLoading(true);
+    try {
+      const params: any = {};
+      if (searchTerm) params.searchTerm = searchTerm;
+      params.fromDate = fromDate.toISOString().split("T")[0];
+      params.toDate = toDate.toISOString().split("T")[0];
+
+      console.log("Fetching reports with params:", params);
+
+      const res = await api.get("/reports/filter", { params });
+
+      console.log("API Response:", res.data);
+
+      const data: ReportData[] = res.data.map((r: any) => ({
+        id: r.id,
+        sid: r.sid,
+        courseName: r.courseName,
+        templateName: r.templateName,
+        jobrole: r.jobrole,
+        level: r.level,
+        batchId: r.batchId,
+        trainingPartner: r.trainingPartner,
+        generatedById: r.generatedById,
+        userProfileId: r.userProfileId,
+        generatedOn: r.generatedOn,
+        status: r.status,
+        grade: r.grade,
+      }));
+
+      setReports(data);
+      setTotalRows(data.length);
+      setDataLoaded(true);
+
+      toast({
+        title: "Success",
+        description: `Loaded ${data.length} reports for selected date range`,
+        variant: "default",
+      });
+
+    } catch (err: any) {
+      console.error("Error fetching reports:", err);
+      toast({
+        title: "Error",
+        description: err.response?.data?.message || err.response?.data?.error || "Failed to load reports.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch all reports without date filter
+  const fetchAllReports = async () => {
+    setLoading(true);
+    try {
+      const params: any = {};
+      if (searchTerm) params.searchTerm = searchTerm;
+
+      console.log("Fetching all reports with params:", params);
+
+      const res = await api.get("/reports/all", { params });
+
+      console.log("All Reports API Response:", res.data);
+
+      const data: ReportData[] = res.data.map((r: any) => ({
+        id: r.id,
+        sid: r.sid,
+        courseName: r.courseName,
+        templateName: r.templateName,
+        jobrole: r.jobrole,
+        level: r.level,
+        batchId: r.batchId,
+        trainingPartner: r.trainingPartner,
+        generatedById: r.generatedById,
+        userProfileId: r.userProfileId,
+        generatedOn: r.generatedOn,
+        status: r.status,
+        grade: r.grade,
+      }));
+
+      setReports(data);
+      setTotalRows(data.length);
+      setDataLoaded(true);
+      setFromDate(null);
+      setToDate(null);
+
+      toast({
+        title: "Success",
+        description: `Loaded ${data.length} reports (all data)`,
+        variant: "default",
+      });
+
+    } catch (err: any) {
+      console.error("Error fetching all reports:", err);
+      toast({
+        title: "Error",
+        description: err.response?.data?.message || err.response?.data?.error || "Failed to load reports.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetFilters = () => {
+    setFromDate(null);
+    setToDate(null);
+    setSearchTerm("");
+    setReports([]);
+    setTotalRows(0);
+    setDataLoaded(false);
+  };
+
+  // Excel export
+  const exportExcel = () => {
+    if (reports.length === 0) {
+      toast({
+        title: "Info",
+        description: "No data to export",
+        variant: "default",
+      });
+      return;
+    }
+
+    const worksheetData = reports.map((r, index) => ({
+      "S.No": index + 1,
+      SID: r.sid || "N/A",
+      Template: r.templateName || "N/A",
+      "Job Role": r.jobrole || "N/A",
+      "Candidate Name": r.courseName || "N/A",
+      Level: r.level || "N/A",
+      Batch: r.batchId || "N/A",
+      "Training Partner": r.trainingPartner || "N/A",
+      Grade: r.grade || "N/A",
+      Status: r.status || "N/A",
+      "Generated By": r.generatedById || "N/A",
+      "Generated On": r.generatedOn || "N/A",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reports");
+    
+    // Auto-size columns
+    const maxWidth = worksheetData.reduce((w, r) => Math.max(w, r['Candidate Name']?.length || 0), 10);
+    worksheet['!cols'] = [{ wch: 5 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 20 }];
+    
+    XLSX.writeFile(workbook, `certificate_reports_${new Date().toISOString().split('T')[0]}.xlsx`);
+    
     toast({
-      title: `Exporting to ${format.toUpperCase()}`,
-      description: `${selectedReports.length} reports will be exported`,
+      title: "Success",
+      description: `Exported ${reports.length} records to Excel`,
+      variant: "default",
     });
   };
 
-  const handleExportAll = (format: "excel" | "pdf") => {
-    toast({
-      title: `Exporting all reports to ${format.toUpperCase()}`,
-      description: `${filteredReports.length} reports will be exported`,
-    });
-  };
+  const columns: TableColumn<ReportData>[] = [
+    { 
+      name: "S.No", 
+      cell: (_row, index) => index + 1, 
+      width: "70px",
+      sortable: true 
+    },
+    { 
+      name: "SID", 
+      selector: (row) => row.sid || "N/A", 
+      sortable: true,
+      wrap: true 
+    },
+    { 
+      name: "Template", 
+      selector: (row) => row.templateName || "N/A", 
+      sortable: true,
+      wrap: true 
+    },
+    { 
+      name: "Job Role", 
+      selector: (row) => row.jobrole || "N/A", 
+      sortable: true,
+      wrap: true 
+    },
+    { 
+      name: "Candidate Name", 
+      selector: (row) => row.courseName || "N/A", 
+      sortable: true,
+      wrap: true 
+    },
+    { 
+      name: "Level", 
+      selector: (row) => row.level || "N/A",
+      wrap: true 
+    },
+    { 
+      name: "Batch", 
+      selector: (row) => row.batchId || "N/A", 
+      sortable: true,
+      wrap: true 
+    },
+    { 
+      name: "Training Partner", 
+      selector: (row) => row.trainingPartner || "N/A", 
+      sortable: true,
+      wrap: true 
+    },
+    { 
+      name: "Grade", 
+      selector: (row) => row.grade || "N/A",
+      wrap: true 
+    },
+    { 
+      name: "Status", 
+      selector: (row) => row.status || "N/A",
+      wrap: true 
+    },
+    { 
+      name: "Generated By", 
+      selector: (row) => row.generatedById || "N/A", 
+      sortable: true,
+      wrap: true 
+    },
+    { 
+      name: "Generated On", 
+      selector: (row) => {
+        if (!row.generatedOn) return "N/A";
+        try {
+          const date = new Date(row.generatedOn);
+          return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        } catch {
+          return row.generatedOn;
+        }
+      },
+      wrap: true,
+      sortable: true 
+    },
+  ];
 
-  const toggleReportSelection = (reportId: number) => {
-    setSelectedReports(prev => 
-      prev.includes(reportId) 
-        ? prev.filter(id => id !== reportId)
-        : [...prev, reportId]
-    );
-  };
-
-  const toggleAllReports = () => {
-    setSelectedReports(prev => 
-      prev.length === filteredReports.length 
-        ? []
-        : filteredReports.map(report => report.id)
-    );
-  };
+  // Remove the useEffect that loads data automatically
+  // No data will be loaded on component mount
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Reports</h1>
-        <p className="text-muted-foreground">
-          View and export detailed reports of all certificate generations
-        </p>
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+        <h1 className="text-3xl font-bold text-gray-800">Certificate Reports</h1>
+        <div className="text-sm text-gray-600">
+          {dataLoaded ? `Showing ${reports.length} records` : "Select date range to load reports"}
+        </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Reports</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{certificateReports.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
-            <CheckCircle className="h-4 w-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {certificateReports.filter(r => r.status === "completed").length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Processing</CardTitle>
-            <Clock className="h-4 w-4 text-warning" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {certificateReports.filter(r => r.status === "processing").length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Downloads</CardTitle>
-            <Download className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {certificateReports.reduce((sum, report) => sum + report.downloadCount, 0)}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-lg shadow">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+            <DatePicker
+              selected={fromDate}
+              onChange={(date: Date | null) => setFromDate(date)}
+              selectsStart
+              startDate={fromDate}
+              endDate={toDate}
+              placeholderText="Select start date"
+              className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              dateFormat="yyyy-MM-dd"
+              isClearable
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+            <DatePicker
+              selected={toDate}
+              onChange={(date: Date | null) => setToDate(date)}
+              selectsEnd
+              startDate={fromDate}
+              endDate={toDate}
+              minDate={fromDate}
+              placeholderText="Select end date"
+              className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              dateFormat="yyyy-MM-dd"
+              isClearable
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by SID, Name, Template..."
+              className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+          </div>
+          <div className="flex items-end gap-2">
+            <Button 
+              variant="default" 
+              onClick={fetchReports} 
+              className="w-full"
+              disabled={!fromDate || !toDate}
+            >
+              Filter by Date
+            </Button>
+          </div>
+        </div>
+        
+        <div className="flex flex-wrap gap-2">
+          <Button variant="default" onClick={fetchAllReports}>
+            Load All Reports
+          </Button>
+          <Button variant="outline" onClick={resetFilters}>
+            Clear Filters
+          </Button>
+          <Button 
+            variant="default" 
+            onClick={exportExcel} 
+            disabled={reports.length === 0}
+          >
+            Export Excel ({reports.length})
+          </Button>
+        </div>
       </div>
 
-      {/* Filters and Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Certificate Generation Reports</CardTitle>
-          <CardDescription>
-            Detailed overview of all certificate generation activities
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:space-x-2">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search reports..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8 w-full md:w-[300px]"
-                />
-              </div>
-              
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full md:w-[150px]">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="processing">Processing</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                </SelectContent>
-              </Select>
+      {/* DataTable */}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <DataTable
+          columns={columns}
+          data={reports}
+          progressPending={loading}
+          pagination
+          paginationPerPage={50}
+          paginationRowsPerPageOptions={[10, 25, 50, 100, 500, 1000]}
+          paginationComponentOptions={{
+            rowsPerPageText: "Rows per page:",
+            rangeSeparatorText: "of",
+            noRowsPerPage: false,
+          }}
+          highlightOnHover
+          persistTableHead
+          responsive
+          striped
+          dense
+          noDataComponent={
+            <div className="p-8 text-center text-gray-500">
+              {loading 
+                ? "Loading reports..." 
+                : dataLoaded 
+                  ? "No reports found for the selected criteria." 
+                  : "Please select date range and click 'Filter by Date' to load reports."
+              }
             </div>
-
-            <div className="flex flex-col gap-2 md:flex-row">
-              <Button
-                variant="outline"
-                onClick={() => handleExportSelected("excel")}
-                disabled={selectedReports.length === 0}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export Selected (Excel)
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleExportSelected("pdf")}
-                disabled={selectedReports.length === 0}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export Selected (PDF)
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Reports Table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[50px]">
-                    <input
-                      type="checkbox"
-                      checked={selectedReports.length === filteredReports.length && filteredReports.length > 0}
-                      onChange={toggleAllReports}
-                      className="rounded border-gray-300"
-                    />
-                  </TableHead>
-                  <TableHead>File Name</TableHead>
-                  <TableHead>Template</TableHead>
-                  <TableHead>Generated By</TableHead>
-                  <TableHead>Generated</TableHead>
-                  <TableHead>Downloaded</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredReports.map((report) => (
-                  <TableRow key={report.id} className="hover:bg-muted/50">
-                    <TableCell>
-                      <input
-                        type="checkbox"
-                        checked={selectedReports.includes(report.id)}
-                        onChange={() => toggleReportSelection(report.id)}
-                        className="rounded border-gray-300"
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center space-x-2">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <span>{report.fileName}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{report.templateName}</TableCell>
-                    <TableCell>{report.generatedBy}</TableCell>
-                    <TableCell>{report.generatedCount}</TableCell>
-                    <TableCell>{report.downloadCount}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        {getStatusIcon(report.status)}
-                        {getStatusBadge(report.status)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-1">
-                        <Calendar className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm">{report.createdAt}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-1">
-                        {report.status === "completed" && (
-                          <Button variant="outline" size="sm">
-                            <Download className="h-3 w-3" />
-                          </Button>
-                        )}
-                        <Button variant="outline" size="sm">
-                          <FileText className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          
-          {filteredReports.length === 0 && (
-            <div className="text-center py-8">
-              <FileText className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-muted-foreground">No reports found matching your criteria</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Bulk Export Actions */}
-      {filteredReports.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Bulk Export</CardTitle>
-            <CardDescription>
-              Export all filtered reports at once
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex space-x-2">
-              <Button onClick={() => handleExportAll("excel")} variant="outline">
-                <Download className="h-4 w-4 mr-2" />
-                Export All to Excel
-              </Button>
-              <Button onClick={() => handleExportAll("pdf")} variant="outline">
-                <Download className="h-4 w-4 mr-2" />
-                Export All to PDF
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+          }
+          customStyles={{
+            headCells: {
+              style: {
+                backgroundColor: '#f8fafc',
+                fontWeight: 'bold',
+                fontSize: '14px',
+              },
+            },
+            cells: {
+              style: {
+                fontSize: '13px',
+              },
+            },
+          }}
+        />
+      </div>
     </div>
   );
 }

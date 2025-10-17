@@ -67,40 +67,67 @@ export default function CertificatePage() {
   const [files, setFiles] = useState<TemplateFiles>({ excel: null, zip: null, logo: null, sign: null });
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [userId, setUserId] = useState<number>(1);
+  const [role, setRole] = useState<string>(""); // admin/user
   const { toast } = useToast();
 
+  const token = typeof window !== "undefined" ? sessionStorage.getItem("authToken") : null;
+
+  // Fetch templates based on role
   useEffect(() => {
+    if (!token) {
+      toast({
+        title: "Unauthorized",
+        description: "No JWT token found. Please login again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Decode token locally to extract role (optional, if backend sends role separately you can skip)
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      setRole(payload.role || "user");
+    } catch (e) {
+      console.error("Failed to parse JWT token", e);
+    }
+
+    
     axios
-      .get("http://localhost:8086/templates")
-      .then((res) => setTemplates(res.data))
-      .catch((err) =>
+      .get("http://localhost:8086/templates", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => setTemplates(res.data || []))
+      .catch((err) => {
+        console.error("Error fetching templates:", err);
         toast({
-          title: "Error",
+          title: "Error loading templates",
           description: err.response?.data || err.message,
           variant: "destructive",
-          duration: 5000,
-        })
-      );
-  }, []);
+        });
+      });
+  }, [token]);
 
+  // Fetch selected template images
   useEffect(() => {
-    if (!selectedTemplateId) {
+    if (!selectedTemplateId || !token) {
       setTemplateImages([]);
       return;
     }
+
     axios
-      .get<string[]>(`http://localhost:8086/templates/${selectedTemplateId}/images`)
-      .then((res) => setTemplateImages(res.data))
-      .catch(() =>
+      .get<string[]>(`http://localhost:8086/templates/${selectedTemplateId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => setTemplateImages(res.data || []))
+      .catch((err) => {
+        console.error("Error fetching template images:", err);
         toast({
-          title: "Template loaded ✅",
-          description: "Images loaded successfully",
-          variant: "default",
-          duration: 3000,
-        })
-      );
-  }, [selectedTemplateId]);
+          title: "Error loading images",
+          description: err.response?.data || err.message,
+          variant: "destructive",
+        });
+      });
+  }, [selectedTemplateId, token]);
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
@@ -119,20 +146,19 @@ export default function CertificatePage() {
     const file = e.target.files?.[0] || null;
     if (file) {
       setFiles((prev) => ({ ...prev, [type]: file }));
-      toast({ title: `${type.toUpperCase()} uploaded ✅`, description: file.name, duration: 5000 });
+      toast({ title: `${type.toUpperCase()} uploaded`, description: file.name });
     }
   };
 
   const handleGenerate = async () => {
-    if (!selectedTemplate) return;
+    if (!selectedTemplate || !token) return;
 
     const missing = requiredFields.filter((f) => !files[f]);
     if (missing.length > 0) {
       toast({
-        title: "Missing files ⚠️",
+        title: "Missing files",
         description: `Please upload: ${missing.join(", ")}`,
         variant: "destructive",
-        duration: 5000,
       });
       return;
     }
@@ -149,15 +175,19 @@ export default function CertificatePage() {
       const file = files[f];
       if (file) formData.append(fieldMap[f], file);
     });
-    formData.append("userId", String(userId));
 
     setIsUploading(true);
-    setErrorMessage("");
     try {
       const res = await axios.post(
         `http://localhost:8086/certificates/generate-zip/${selectedTemplate.id}`,
         formData,
-        { responseType: "blob", headers: { "Content-Type": "multipart/form-data" } }
+        {
+          responseType: "blob",
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
 
       const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/zip" }));
@@ -168,13 +198,13 @@ export default function CertificatePage() {
       link.click();
       link.remove();
 
-      toast({ title: "Success ✅", description: "Certificates downloaded successfully.", duration: 5000 });
+      toast({ title: "Certificates generated successfully!" });
       setFiles({ excel: null, zip: null, logo: null, sign: null });
       setSelectedTemplateId(null);
       setTemplateImages([]);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage("An error occurred while generating certificates. Please contact the admin.");
+      setErrorMessage("An error occurred while generating certificates.");
     } finally {
       setIsUploading(false);
     }
@@ -187,27 +217,26 @@ export default function CertificatePage() {
           <CardTitle className="text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
             Certificate Management
           </CardTitle>
-          <p className="text-gray-500 mt-2 text-sm md:text-base">
-            Streamline your certificates • Managed by{" "}
-            <span className="font-semibold text-indigo-600">Nagendra Pandey</span>
-          </p>
+          <p className="text-sm text-gray-500 mt-1">Role: {role}</p>
         </CardHeader>
+
         <CardContent className="space-y-6">
           <div className="flex flex-col items-center gap-2">
             <select
               className="w-full md:w-[85%] border rounded-lg p-3 text-sm focus:ring focus:ring-indigo-400"
               value={selectedTemplateId ?? ""}
-              onChange={(e) => {
-                setSelectedTemplateId(Number(e.target.value));
-                setFiles({ excel: null, zip: null, logo: null, sign: null });
-              }}
+              onChange={(e) => setSelectedTemplateId(Number(e.target.value))}
             >
               <option value="">-- Select Certificate Template --</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.templateName}
-                </option>
-              ))}
+              {templates.length > 0 ? (
+                templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.templateName}
+                  </option>
+                ))
+              ) : (
+                <option disabled>No templates found</option>
+              )}
             </select>
           </div>
 
@@ -284,14 +313,11 @@ export default function CertificatePage() {
                   </>
                 )}
               </Button>
-
-              {errorMessage && (
-                <p className="text-red-600 mt-2 font-medium">{errorMessage}</p>
-              )}
+              {errorMessage && <p className="text-red-600 mt-2 font-medium">{errorMessage}</p>}
             </div>
           )}
         </CardContent>
       </Card>
     </div>
   );
-};
+}

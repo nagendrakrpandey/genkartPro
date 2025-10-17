@@ -20,54 +20,95 @@ public class JwtUtil {
 
     @PostConstruct
     public void init() {
-        byte[] keyBytes = Decoders.BASE64.decode(jwtSecretBase64);
-        signingKey = Keys.hmacShaKeyFor(keyBytes); // will throw if key too short
+        try {
+            byte[] keyBytes = Decoders.BASE64.decode(jwtSecretBase64);
+            signingKey = Keys.hmacShaKeyFor(keyBytes);
+        } catch (Exception e) {
+            throw new IllegalStateException("Invalid JWT secret key", e);
+        }
     }
 
+    // Generate JWT token with all necessary claims
+    public String generateToken(Long userId, String username, String email, String role) {
+        if (userId == null || username == null) {
+            throw new IllegalArgumentException("userId and username cannot be null for JWT generation");
+        }
 
-
-    public String generateToken(String username, String email) {
         return Jwts.builder()
-                .setSubject(username) // main subject = username
-                .claim("email", email) // extra claim for email
+                .setSubject(username)
+                .claim("userId", userId)
+                .claim("email", email != null ? email : "")
+                .claim("role", role != null ? role : "")
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 7)) // 7 days
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    public String extractUsername(String token) throws JwtException {
-        // ✅ Clean token: remove spaces and non-ASCII
-        token = token.trim().replaceAll("[^\\x20-\\x7E]", "");
-        return Jwts.parserBuilder()
-                .setSigningKey(signingKey)
-                .build()
-                .parseClaimsJws(token)
-                .getBody()
-                .getSubject();
-    }
-
-    public boolean validateToken(String token, String username) {
+    // Extract claims from JWT token
+    public Claims extractAllClaims(String token) {
+        token = cleanToken(token);
+        if (token.isEmpty()) throw new IllegalArgumentException("JWT token is missing");
         try {
-            String sub = extractUsername(token);
-            return sub.equals(username) && !isTokenExpired(token);
-        } catch (JwtException e) {
-            // invalid, expired, or malformed token
-            return false;
-        }
-    }
-
-    private boolean isTokenExpired(String token) {
-        try {
-            Date expiration = Jwts.parserBuilder()
+            return Jwts.parserBuilder()
                     .setSigningKey(signingKey)
                     .build()
                     .parseClaimsJws(token)
-                    .getBody()
-                    .getExpiration();
-            return expiration.before(new Date());
+                    .getBody();
         } catch (JwtException e) {
-            return true; // treat malformed token as expired
+            throw new IllegalArgumentException("Invalid JWT token: " + e.getMessage());
+        }
+    }
+
+    // Remove Bearer prefix and illegal characters
+    public String cleanToken(String token) {
+        if (token == null) return "";
+        token = token.trim();
+        if (token.startsWith("Bearer ")) token = token.substring(7);
+        return token.replaceAll("[^\\x20-\\x7E]", "");
+    }
+
+    // Extract userId claim
+    public Long extractUserId(String token) {
+        Object userIdObj = extractAllClaims(token).get("userId");
+        if (userIdObj == null) throw new IllegalArgumentException("JWT token missing 'userId' claim");
+        if (userIdObj instanceof Integer) return ((Integer) userIdObj).longValue();
+        if (userIdObj instanceof Long) return (Long) userIdObj;
+        return Long.parseLong(userIdObj.toString());
+    }
+
+    // Extract username (subject)
+    public String extractUsername(String token) {
+        String username = extractAllClaims(token).getSubject();
+        if (username == null) throw new IllegalArgumentException("JWT token missing 'username' (subject)");
+        return username;
+    }
+
+    // Extract email claim
+    public String extractEmail(String token) {
+        Object email = extractAllClaims(token).get("email");
+        return email != null ? email.toString() : "";
+    }
+
+    // Extract role claim
+    public String extractRole(String token) {
+        Object role = extractAllClaims(token).get("role");
+        return role != null ? role.toString() : "";
+    }
+
+    // Check if token is expired
+    public boolean isTokenExpired(String token) {
+        Date expiration = extractAllClaims(token).getExpiration();
+        return expiration.before(new Date());
+    }
+
+    // Validate token against username
+    public boolean validateToken(String token, String username) {
+        try {
+            String extractedUsername = extractUsername(token);
+            return extractedUsername.equals(username) && !isTokenExpired(token);
+        } catch (Exception e) {
+            return false;
         }
     }
 }

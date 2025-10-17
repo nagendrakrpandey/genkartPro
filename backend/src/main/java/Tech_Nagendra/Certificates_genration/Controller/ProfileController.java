@@ -5,55 +5,80 @@ import Tech_Nagendra.Certificates_genration.Dto.ProfileStatsDto;
 import Tech_Nagendra.Certificates_genration.Dto.UpdatePasswordDto;
 import Tech_Nagendra.Certificates_genration.Service.ProfileService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/profile")
 @RequiredArgsConstructor
+@CrossOrigin(origins = "http://localhost:8081", allowCredentials = "true")
 public class ProfileController {
 
     private final ProfileService profileService;
 
-
     private String extractToken(String header) {
-        return (header != null && header.startsWith("Bearer ")) ? header.substring(7) : header;
+        if (header == null || !header.startsWith("Bearer ")) {
+            throw new IllegalArgumentException("Authorization header must be provided in the format 'Bearer <token>'");
+        }
+        return header.substring(7).trim();
     }
 
-    // Get Profile
     @GetMapping
-    public ResponseEntity<ProfileDto> getProfile(@RequestHeader("Authorization") String token) {
-        String jwt = extractToken(token);
-        ProfileDto profile = profileService.getProfile(jwt);
-        return ResponseEntity.ok(profile);
+    public ResponseEntity<?> getProfile(@RequestHeader(value = "Authorization", required = false) String tokenHeader) {
+        try {
+            String token = extractToken(tokenHeader);
+            ProfileDto profile = profileService.getProfile(token);
+            return ResponseEntity.ok(profile);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to fetch profile: " + e.getMessage());
+        }
     }
-
 
     @PutMapping
-    public ResponseEntity<ProfileDto> updateProfile(
-            @RequestHeader("Authorization") String token,
-            @RequestBody ProfileDto profileDto) {
-        String jwt = extractToken(token);
-        ProfileDto updated = profileService.updateProfile(jwt, profileDto);
-        return ResponseEntity.ok(updated);
+    public ResponseEntity<?> updateProfile(@RequestHeader(value = "Authorization", required = false) String tokenHeader,
+                                           @RequestBody ProfileDto profileDto) {
+        try {
+            String token = extractToken(tokenHeader);
+            ProfileDto updated = profileService.updateProfile(token, profileDto);
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to update profile: " + e.getMessage());
+        }
     }
 
     @PutMapping("/password")
-    public ResponseEntity<String> updatePassword(
-            @RequestHeader("Authorization") String token,
-            @RequestBody UpdatePasswordDto passwordDto) {
-        String jwt = extractToken(token);
-        boolean success = profileService.updatePassword(jwt, passwordDto);
-        return success
-                ? ResponseEntity.ok("Password updated successfully")
-                : ResponseEntity.badRequest().body("Current password is incorrect");
+    public ResponseEntity<?> updatePassword(@RequestHeader(value = "Authorization", required = false) String tokenHeader,
+                                            @RequestBody UpdatePasswordDto passwordDto) {
+        try {
+            String token = extractToken(tokenHeader);
+            boolean success = profileService.updatePassword(token, passwordDto);
+            if (success) {
+                return ResponseEntity.ok("Password updated successfully");
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Current password is incorrect");
+            }
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to update password: " + e.getMessage());
+        }
     }
 
     @GetMapping("/stats")
-    public ResponseEntity<ProfileStatsDto> getStats(@RequestHeader("Authorization") String token) {
-        String jwt = extractToken(token);
-        ProfileStatsDto stats = profileService.getStats(jwt);
-        return ResponseEntity.ok(stats);
+    public ResponseEntity<?> getStats(@RequestHeader(value = "Authorization", required = false) String tokenHeader) {
+        try {
+            String token = extractToken(tokenHeader);
+            ProfileStatsDto stats = profileService.getStats(token);
+            return ResponseEntity.ok(stats);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to fetch stats: " + e.getMessage());
+        }
     }
 }
