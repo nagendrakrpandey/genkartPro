@@ -80,6 +80,9 @@ public class CertificateService {
                     }
                 }
             }
+            JRPropertiesUtil.getInstance(DefaultJasperReportsContext.getInstance())
+                    .setProperty("net.sf.jasperreports.awt.ignore.missing.font", "false");
+
             fontsLoaded = true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -193,7 +196,7 @@ public class CertificateService {
 
             Report report = new Report();
             report.setSid(candidate.getSid());
-            report.setCourseName(candidate.getCandidateName());
+            report.setCandidateName(candidate.getCandidateName());
             report.setGrade(candidate.getGrade());
             report.setBatchId(candidate.getBatchId());
             report.setTemplateName(candidate.getTemplate() != null ? candidate.getTemplate().getTemplateName() : null);
@@ -230,6 +233,13 @@ public class CertificateService {
             if (imageType >= 3 && uploadedFiles != null && uploadedFiles.containsKey("sign")) {
                 parameters.put("imgParam6", uploadedFiles.get("sign").getAbsolutePath());
             }
+
+            parameters.put(JRParameter.REPORT_LOCALE, Locale.ENGLISH);
+            parameters.put("net.sf.jasperreports.default.font.name", "Arial");
+            parameters.put("net.sf.jasperreports.export.pdf.font.embedded", true);
+            JRPropertiesUtil.getInstance(DefaultJasperReportsContext.getInstance())
+                    .setProperty("net.sf.jasperreports.awt.ignore.missing.font", "false");
+
 
             JasperPrint jasperPrint = JasperFillManager.fillReport(
                     jasperReport,

@@ -43,8 +43,8 @@ public class Report {
     @Column(name = "job_role")
     private String jobrole;
 
-    @Column(name = "course_name")
-    private String courseName;
+    @Column(name = "candidate_name")
+    private String candidateName;
 
     private String level;
 
@@ -97,7 +97,7 @@ public class Report {
                 ", generatedById=" + (generatedBy != null ? generatedBy.getId() : null) +
                 ", generatedOn=" + generatedOn +
                 ", jobrole='" + jobrole + '\'' +
-                ", courseName='" + courseName + '\'' +
+                ", courseName='" +candidateName + '\'' +
                 ", level='" + level + '\'' +
                 ", templateId=" + (template != null ? template.getId() : null) +
                 ", trainingPartner='" + trainingPartner + '\'' +

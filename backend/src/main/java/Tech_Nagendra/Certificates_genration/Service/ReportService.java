@@ -86,7 +86,7 @@ public class ReportService {
                 .filter(r -> status == null || (r.getStatus() != null && r.getStatus().equalsIgnoreCase(status)))
                 .filter(r -> searchTerm == null ||
                         (r.getSid() != null && r.getSid().toLowerCase().contains(searchTerm.toLowerCase())) ||
-                        (r.getCourseName() != null && r.getCourseName().toLowerCase().contains(searchTerm.toLowerCase())) ||
+                        (r.getCandidateName() != null && r.getCandidateName().toLowerCase().contains(searchTerm.toLowerCase())) ||
                         (r.getTemplateName() != null && r.getTemplateName().toLowerCase().contains(searchTerm.toLowerCase())) ||
                         (r.getBatchId() != null && r.getBatchId().toLowerCase().contains(searchTerm.toLowerCase())) ||
                         (r.getTrainingPartner() != null && r.getTrainingPartner().toLowerCase().contains(searchTerm.toLowerCase())))
@@ -154,7 +154,7 @@ public class ReportService {
         ReportDTO dto = new ReportDTO();
         dto.setId(report.getId());
         dto.setSid(report.getSid());
-        dto.setCourseName(report.getCourseName());
+        dto.setCourseName(report.getCandidateName());
         dto.setGrade(report.getGrade());
         dto.setTemplateName(report.getTemplateName());
         dto.setJobrole(report.getJobrole());
@@ -185,7 +185,7 @@ public class ReportService {
 
         if (!existingReports.isEmpty()) {
             Report existing = existingReports.get(0);
-            existing.setCourseName(report.getCourseName());
+            existing.setCandidateName(report.getCandidateName());
             existing.setGrade(report.getGrade());
             existing.setJobrole(report.getJobrole());
             existing.setLevel(report.getLevel());
@@ -387,7 +387,7 @@ public class ReportService {
                 .filter(r -> status == null || (r.getStatus() != null && r.getStatus().equalsIgnoreCase(status)))
                 .filter(r -> searchTerm == null ||
                         (r.getSid() != null && r.getSid().toLowerCase().contains(searchTerm.toLowerCase())) ||
-                        (r.getCourseName() != null && r.getCourseName().toLowerCase().contains(searchTerm.toLowerCase())) ||
+                        (r.getCandidateName() != null && r.getCandidateName().toLowerCase().contains(searchTerm.toLowerCase())) ||
                         (r.getTemplateName() != null && r.getTemplateName().toLowerCase().contains(searchTerm.toLowerCase())))
                 .filter(r -> from == null || (r.getGeneratedOn() != null && !r.getGeneratedOn().before(from)))
                 .filter(r -> to == null || (r.getGeneratedOn() != null && !r.getGeneratedOn().after(to)))

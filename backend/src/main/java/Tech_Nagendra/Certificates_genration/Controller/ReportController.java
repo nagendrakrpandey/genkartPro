@@ -49,7 +49,7 @@ public class ReportController {
         ReportDTO dto = new ReportDTO();
         dto.setId(report.getId());
         dto.setSid(report.getSid());
-        dto.setCourseName(report.getCourseName());
+        dto.setCourseName(report.getCandidateName());
         dto.setGrade(report.getGrade());
         dto.setTemplateName(report.getTemplateName());
         dto.setJobrole(report.getJobrole());

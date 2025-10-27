@@ -249,6 +249,13 @@
             <artifactId>spring-session-data-redis</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>net.sf.jasperreports</groupId>
+            <artifactId>jasperreports</artifactId>
+            <version>6.21.0</version>
+        </dependency>
+
+
 
 
         <!-- Logging -->

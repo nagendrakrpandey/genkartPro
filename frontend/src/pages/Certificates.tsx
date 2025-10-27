@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom"; 
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,7 +76,7 @@ function UploadCard({
 }
 
 export default function CertificatePage() {
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
   const [templates, setTemplates] = useState<TemplateType[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [templateImages, setTemplateImages] = useState<string[]>([]);
@@ -124,7 +124,6 @@ export default function CertificatePage() {
         });
       });
   }, [token]);
-
 
   useEffect(() => {
     if (!selectedTemplateId || !token) {
@@ -229,130 +228,149 @@ export default function CertificatePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-white to-purple-100 py-10 px-4 flex justify-center items-center">
-      <Card className="w-full max-w-7xl shadow-2xl rounded-3xl p-6 bg-white border border-gray-200">
-        <CardHeader className="text-center mb-6">
-          <CardTitle className="text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-            Certificate Management
-          </CardTitle>
-          <p className="text-sm text-gray-500 mt-1">Role: {role}</p>
-
-          {role === "ADMIN" && (
-            <div className="flex justify-center mt-4">
-              <Button
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-2 rounded-full flex items-center gap-2 hover:scale-105 transition"
-                onClick={() => navigate("/upload-template")}
-              >
-                <UploadCloud className="h-5 w-5" /> Upload New Template
-              </Button>
-            </div>
-          )}
-        </CardHeader>
-
-        <CardContent className="space-y-6">
-          {/* Template Selection */}
-          <div className="flex flex-col items-center gap-2">
-            <select
-              className="w-full md:w-[85%] border rounded-lg p-3 text-sm focus:ring focus:ring-indigo-400 shadow-sm"
-              value={selectedTemplateId ?? ""}
-              onChange={(e) => setSelectedTemplateId(Number(e.target.value))}
-            >
-              <option value="">-- Select Certificate Template --</option>
-              {templates.length > 0 ? (
-                templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.templateName}
-                  </option>
-                ))
-              ) : (
-                <option disabled>No templates found</option>
-              )}
-            </select>
+    <>
+      {/* 🌈 Enhanced Loader Overlay */}
+      {isUploading && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50 backdrop-blur-md transition-opacity animate-fadeIn">
+          <div className="relative flex items-center justify-center mb-6">
+            <div className="absolute h-24 w-24 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-40 blur-xl animate-pulse"></div>
+            <div className="h-14 w-14 border-4 border-transparent border-t-indigo-600 border-r-purple-600 rounded-full animate-spin"></div>
           </div>
+          <h2 className="text-2xl font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent animate-pulse">
+            Generating Certificates...
+          </h2>
+          <p className="mt-2 text-gray-500 text-sm tracking-wide animate-[pulse_2s_ease-in-out_infinite]">
+            Please wait while we prepare your files
+          </p>
+        </div>
+      )}
 
-          {/* Template Preview */}
-          {templateImages.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
-              {templateImages.map((img, idx) => (
-                <img
-                  key={idx}
-                  src={img}
-                  alt={`Template ${idx + 1}`}
-                  className="h-28 sm:h-32 md:h-40 w-full object-contain rounded-xl border hover:shadow-md transition"
-                />
-              ))}
-            </div>
-          )}
+      {/* 🔹 Main Content */}
+      <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-white to-purple-100 py-10 px-4 flex justify-center items-center">
+        <Card className="w-full max-w-7xl shadow-2xl rounded-3xl p-6 bg-white border border-gray-200">
+          <CardHeader className="text-center mb-6">
+            <CardTitle className="text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+              Certificate Management
+            </CardTitle>
+            <p className="text-sm text-gray-500 mt-1">Role: {role}</p>
 
-          {/* Upload Cards */}
-          {selectedTemplate && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-6">
-              {requiredFields.includes("excel") && (
-                <UploadCard
-                  title="Upload Excel"
-                  icon={<FileSpreadsheet className="h-6 w-6 text-green-600" />}
-                  accept=".xlsx,.xls"
-                  onChange={(e) => handleFileUpload("excel", e)}
-                  file={files.excel}
-                />
-              )}
-              {requiredFields.includes("zip") && (
-                <UploadCard
-                  title="Upload Images (ZIP)"
-                  icon={<Image className="h-6 w-6 text-purple-600" />}
-                  accept=".zip"
-                  onChange={(e) => handleFileUpload("zip", e)}
-                  file={files.zip}
-                />
-              )}
-              {requiredFields.includes("logo") && (
-                <UploadCard
-                  title="Upload Logo"
-                  icon={<FileImage className="h-6 w-6 text-blue-600" />}
-                  accept="image/*"
-                  onChange={(e) => handleFileUpload("logo", e)}
-                  file={files.logo}
-                  preview
-                />
-              )}
-              {requiredFields.includes("sign") && (
-                <UploadCard
-                  title="Upload Signature"
-                  icon={<Stamp className="h-6 w-6 text-amber-600" />}
-                  accept="image/*"
-                  onChange={(e) => handleFileUpload("sign", e)}
-                  file={files.sign}
-                  preview
-                />
-              )}
-            </div>
-          )}
+            {role === "ADMIN" && (
+              <div className="flex justify-center mt-4">
+                <Button
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-2 rounded-full flex items-center gap-2 hover:scale-105 transition"
+                  onClick={() => navigate("/upload-template")}
+                >
+                  <UploadCloud className="h-5 w-5" /> Upload New Template
+                </Button>
+              </div>
+            )}
+          </CardHeader>
 
-          {/* Generate Button */}
-          {selectedTemplate && (
-            <div className="text-center mt-8">
-              <Button
-                onClick={handleGenerate}
-                disabled={isUploading || requiredFields.some((f) => !files[f])}
-                className="px-8 py-3 text-lg rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:shadow-xl text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+          <CardContent className="space-y-6">
+            {/* Template Selection */}
+            <div className="flex flex-col items-center gap-2">
+              <select
+                className="w-full md:w-[85%] border rounded-lg p-3 text-sm focus:ring focus:ring-indigo-400 shadow-sm"
+                value={selectedTemplateId ?? ""}
+                onChange={(e) => setSelectedTemplateId(Number(e.target.value))}
               >
-                {isUploading ? (
-                  <>
-                    <Clock className="h-5 w-5 mr-2 animate-spin" /> Processing...
-                  </>
+                <option value="">-- Select Certificate Template --</option>
+                {templates.length > 0 ? (
+                  templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.templateName}
+                    </option>
+                  ))
                 ) : (
-                  <>
-                    <CheckCircle className="h-5 w-5 mr-2" /> Generate Certificates
-                  </>
+                  <option disabled>No templates found</option>
                 )}
-              </Button>
-              {errorMessage && (
-                <p className="text-red-600 mt-3 font-medium text-sm">{errorMessage}</p>
-              )}
+              </select>
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+
+            {/* Template Preview */}
+            {templateImages.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
+                {templateImages.map((img, idx) => (
+                  <img
+                    key={idx}
+                    src={img}
+                    alt={`Template ${idx + 1}`}
+                    className="h-28 sm:h-32 md:h-40 w-full object-contain rounded-xl border hover:shadow-md transition"
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Upload Cards */}
+            {selectedTemplate && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-6">
+                {requiredFields.includes("excel") && (
+                  <UploadCard
+                    title="Upload Excel"
+                    icon={<FileSpreadsheet className="h-6 w-6 text-green-600" />}
+                    accept=".xlsx,.xls"
+                    onChange={(e) => handleFileUpload("excel", e)}
+                    file={files.excel}
+                  />
+                )}
+                {requiredFields.includes("zip") && (
+                  <UploadCard
+                    title="Upload Images (ZIP)"
+                    icon={<Image className="h-6 w-6 text-purple-600" />}
+                    accept=".zip"
+                    onChange={(e) => handleFileUpload("zip", e)}
+                    file={files.zip}
+                  />
+                )}
+                {requiredFields.includes("logo") && (
+                  <UploadCard
+                    title="Upload Logo"
+                    icon={<FileImage className="h-6 w-6 text-blue-600" />}
+                    accept="image/*"
+                    onChange={(e) => handleFileUpload("logo", e)}
+                    file={files.logo}
+                    preview
+                  />
+                )}
+                {requiredFields.includes("sign") && (
+                  <UploadCard
+                    title="Upload Signature"
+                    icon={<Stamp className="h-6 w-6 text-amber-600" />}
+                    accept="image/*"
+                    onChange={(e) => handleFileUpload("sign", e)}
+                    file={files.sign}
+                    preview
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Generate Button */}
+            {selectedTemplate && (
+              <div className="text-center mt-8">
+                <Button
+                  onClick={handleGenerate}
+                  disabled={isUploading || requiredFields.some((f) => !files[f])}
+                  className="px-8 py-3 text-lg rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:shadow-xl text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                >
+                  {isUploading ? (
+                    <>
+                      <Clock className="h-5 w-5 mr-2 animate-spin" /> Processing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-5 w-5 mr-2" /> Generate Certificates
+                    </>
+                  )}
+                </Button>
+                {errorMessage && (
+                  <p className="text-red-600 mt-3 font-medium text-sm">{errorMessage}</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </>
   );
 }
