@@ -20,6 +20,7 @@ import {
 } from "recharts";
 import { Award, Download, TrendingUp, FileText, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 
 export default function Dashboard() {
   const [reports, setReports] = useState<any[]>([]);
@@ -30,57 +31,80 @@ export default function Dashboard() {
   const [error, setError] = useState("");
 
   const token = sessionStorage.getItem("authToken");
+  const navigate = useNavigate();
 
+  // ✅ Helper function for authorized fetch
+  const fetchWithAuth = async (url: string, options: any = {}) => {
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...options.headers,
+    };
+
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 403) throw new Error("Access Denied (403)");
+    if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+    return response.json();
+  };
+
+  // ✅ Certificate Generation
   const generateCertificates = async () => {
     try {
+      if (!token) {
+        setError("User not logged in. Please sign in first.");
+        return navigate("/login");
+      }
       setLoading(true);
       setError("");
-      const res = await fetch("http://localhost:8086/certificates/generate", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Certificate generation failed");
-      const data = await res.json();
+
+      const data = await fetchWithAuth(
+        "http://localhost:8086/certificates/generate",
+        { method: "POST" }
+      );
+
       setReports(data);
       setTotalCertificates(data.length);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("Error during certificate generation:", err);
       setError(
-        "An error occurred while generating certificates. Please contact the admin."
+        err.message === "Access Denied (403)"
+          ? "You don't have permission to generate certificates. Contact admin."
+          : "An error occurred while generating certificates. Please try again later."
       );
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ Fetch Reports, Counts, etc.
   useEffect(() => {
-    if (!token) return setError("User not logged in");
+    if (!token) {
+      setError("User not logged in. Redirecting to login...");
+      setTimeout(() => navigate("/login"), 2000);
+      return;
+    }
 
-    fetch("http://localhost:8086/reports/all", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        setReports(data);
-        setTotalCertificates(data.length);
-      })
-      .catch((err) => console.error(err));
+    const fetchData = async () => {
+      try {
+        const [reportsData, monthCount, templateCount] = await Promise.all([
+          fetchWithAuth("http://localhost:8086/reports/all"),
+          fetchWithAuth("http://localhost:8086/reports/count/month"),
+          fetchWithAuth("http://localhost:8086/templates/count"),
+        ]);
+        setReports(reportsData);
+        setTotalCertificates(reportsData.length);
+        setThisMonth(monthCount);
+        setTotalTemplates(templateCount);
+      } catch (err) {
+        console.error("Error fetching dashboard data:", err);
+        setError("Failed to fetch dashboard data. Please check your login or API.");
+      }
+    };
 
-    fetch("http://localhost:8086/reports/count/month", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((count) => setThisMonth(count))
-      .catch((err) => console.error(err));
+    fetchData();
+  }, [token, navigate]);
 
-    fetch("http://localhost:8086/templates/count", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((count) => setTotalTemplates(count))
-      .catch((err) => console.error(err));
-  }, [token]);
-
+  // ✅ Chart Data
   const monthlyData = Array.from({ length: 12 }, (_, i) => {
     const monthReports = reports.filter(
       (r) => r.generatedOn && new Date(r.generatedOn).getMonth() === i
@@ -98,28 +122,28 @@ export default function Dashboard() {
     return { name: type, value: count, color: colors[idx % colors.length] };
   });
 
+  // ✅ Quick Actions
   const quickActions = [
     {
       title: loading ? "Processing..." : "Generate Certificates",
-      description: "Create new certificates",
+      description: "Create new certificates instantly",
       icon: Award,
-      href: "#",
       color: "from-primary to-primary-glow",
-      onClick: generateCertificates,
+      onClick: () => navigate("/Certificates"),
     },
     {
       title: "View Reports",
-      description: "Check certificate reports",
+      description: "Check certificate reports & analytics",
       icon: FileText,
-      href: "/reports",
       color: "from-chart-2 to-green-400",
+      onClick: () => navigate("/reports"),
     },
     {
       title: "Manage Profile",
-      description: "Update settings",
+      description: "Update your personal settings",
       icon: Users,
-      href: "/profile",
       color: "from-chart-3 to-yellow-400",
+      onClick: () => navigate("/profile"),
     },
   ];
 
@@ -130,11 +154,13 @@ export default function Dashboard() {
           Dashboard
         </h1>
         <p className="text-gray-500 mt-1">
-          Hey Nagendra Kumar Pandey! Track and manage certificates, templates, and downloads in real-time.
+          Hey <span className="font-semibold text-indigo-500">Nagendra Kumar Pandey</span>! 👋
+          Track and manage certificates, templates, and performance in real-time.
         </p>
-        {error && <p className="text-red-500 mt-2 font-semibold">{error}</p>}
+        {error && <p className="text-red-500 mt-3 font-semibold">{error}</p>}
       </div>
 
+      {/* Stats Section */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           title="Total Templates"
@@ -143,7 +169,7 @@ export default function Dashboard() {
           color="bg-gradient-to-r from-indigo-500 to-indigo-400"
         />
         <StatCard
-          title="Total Downloads"
+          title="Total Certificates"
           value={totalCertificates}
           icon={<Download className="h-5 w-5 text-white" />}
           color="bg-gradient-to-r from-green-400 to-green-300"
@@ -156,8 +182,12 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* Charts Section */}
       <div className="grid gap-6 md:grid-cols-2">
-        <CardChart title="Monthly Certificate Generation" description="Certificates generated per month">
+        <CardChart
+          title="Monthly Certificate Generation"
+          description="Certificates generated per month"
+        >
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={monthlyData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -169,7 +199,10 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </CardChart>
 
-        <CardChart title="Certificate Types Distribution" description="Breakdown by template type">
+        <CardChart
+          title="Certificate Type Distribution"
+          description="Breakdown by template type"
+        >
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
@@ -191,18 +224,24 @@ export default function Dashboard() {
           <div className="flex flex-wrap justify-center gap-4 mt-4">
             {certificateTypes.map((type) => (
               <div key={type.name} className="flex items-center space-x-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: type.color }} />
-                <span className="text-sm text-gray-600">{type.name} ({type.value})</span>
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: type.color }}
+                />
+                <span className="text-sm text-gray-600">
+                  {type.name} ({type.value})
+                </span>
               </div>
             ))}
           </div>
         </CardChart>
       </div>
 
+      {/* Quick Actions Section */}
       <Card className="hover:shadow-xl transition-shadow duration-300">
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Common features for quick access</CardDescription>
+          <CardDescription>Access common features quickly</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -216,29 +255,23 @@ export default function Dashboard() {
                 />
                 <div className="relative">
                   <action.icon className="h-8 w-8 mb-3 text-primary" />
-                  <h3 className="font-semibold mb-1 text-gray-800">{action.title}</h3>
-                  <p className="text-sm text-gray-500 mb-4">{action.description}</p>
-                  {action.onClick && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={loading}
-                      className="w-full group-hover:bg-primary group-hover:text-white transition-colors"
-                      onClick={action.onClick}
-                    >
-                      {loading ? "Processing..." : "Get Started"}
-                    </Button>
-                  )}
-                  {!action.onClick && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full group-hover:bg-primary group-hover:text-white transition-colors"
-                      onClick={() => (window.location.href = action.href)}
-                    >
-                      Get Started
-                    </Button>
-                  )}
+                  <h3 className="font-semibold mb-1 text-gray-800">
+                    {action.title}
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    {action.description}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loading}
+                    className="w-full group-hover:bg-primary group-hover:text-white transition-colors"
+                    onClick={action.onClick}
+                  >
+                    {loading && action.title.includes("Generate")
+                      ? "Processing..."
+                      : "Get Started"}
+                  </Button>
                 </div>
               </div>
             ))}
@@ -249,8 +282,12 @@ export default function Dashboard() {
   );
 }
 
+
+
 const StatCard = ({ title, value, icon, color }) => (
-  <Card className={`flex flex-col justify-between p-4 rounded-xl shadow-md text-white ${color} hover:scale-105 transition-transform duration-300`}>
+  <Card
+    className={`flex flex-col justify-between p-4 rounded-xl shadow-md text-white ${color} hover:scale-105 transition-transform duration-300`}
+  >
     <div className="flex items-center justify-between">
       <h3 className="text-sm font-medium">{title}</h3>
       {icon}

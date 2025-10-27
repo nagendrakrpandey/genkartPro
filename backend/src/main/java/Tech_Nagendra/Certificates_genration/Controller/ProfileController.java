@@ -33,7 +33,8 @@ public class ProfileController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to fetch profile: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to fetch profile: " + e.getMessage());
         }
     }
 
@@ -42,12 +43,17 @@ public class ProfileController {
                                            @RequestBody ProfileDto profileDto) {
         try {
             String token = extractToken(tokenHeader);
-            ProfileDto updated = profileService.updateProfile(token, profileDto);
-            return ResponseEntity.ok(updated);
+            ProfileDto updatedProfile = profileService.updateProfile(token, profileDto);
+            if (updatedProfile == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found or could not update profile");
+            }
+            return ResponseEntity.ok(updatedProfile);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to update profile: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to update profile: " + e.getMessage());
         }
     }
 
@@ -56,16 +62,18 @@ public class ProfileController {
                                             @RequestBody UpdatePasswordDto passwordDto) {
         try {
             String token = extractToken(tokenHeader);
-            boolean success = profileService.updatePassword(token, passwordDto);
-            if (success) {
+            boolean updated = profileService.updatePassword(token, passwordDto);
+            if (updated) {
                 return ResponseEntity.ok("Password updated successfully");
-            } else {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Current password is incorrect");
             }
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Current password is incorrect");
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to update password: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to update password: " + e.getMessage());
         }
     }
 
@@ -78,7 +86,9 @@ public class ProfileController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to fetch stats: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to fetch stats: " + e.getMessage());
         }
     }
 }

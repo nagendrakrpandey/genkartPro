@@ -14,7 +14,6 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
-
 import jakarta.servlet.http.HttpSession;
 
 @RestController
@@ -45,11 +44,9 @@ public class AuthController {
                     userProfile.getRole()
             );
 
-            // Save JWT in DB
             profileService.saveLoginToken(userProfile.getId(), token);
             session.setAttribute("JWT_TOKEN", token);
 
-            // Debug: Print token claims to verify
             Claims claims = jwtUtil.extractAllClaims(token);
             System.out.println("Generated JWT Claims -> userId: " + claims.get("userId") +
                     ", username: " + claims.getSubject() +

@@ -13,7 +13,6 @@ import org.apache.poi.ss.usermodel.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
 import java.awt.*;
 import java.io.*;
 import java.net.URL;
@@ -200,7 +199,6 @@ public class CertificateService {
             report.setTemplateName(candidate.getTemplate() != null ? candidate.getTemplate().getTemplateName() : null);
             report.setJobrole(candidate.getJobRole());
             report.setLevel(candidate.getLevel());
-            // Set template relationship instead of templateID
             report.setTemplate(candidate.getTemplate());
 
             reportService.saveOrUpdateBySid(report, currentUser);
@@ -300,9 +298,7 @@ public class CertificateService {
     private boolean isImageFile(String name) {
         return name.toLowerCase().endsWith(".jpg") ||
                 name.toLowerCase().endsWith(".jpeg") ||
-                name.toLowerCase().endsWith(".png") ||
-                name.toLowerCase().endsWith(".gif") ||
-                name.toLowerCase().endsWith(".bmp");
+                name.toLowerCase().endsWith(".png") ;
     }
 
     private List<CandidateDTO> parseExcel(File excelFile, Template template) throws Exception {
@@ -312,9 +308,8 @@ public class CertificateService {
              Workbook workbook = WorkbookFactory.create(fis)) {
             Sheet sheet = workbook.getSheetAt(0);
             for (Row row : sheet) {
-                if (row.getRowNum() == 0) continue; // Skip header row
+                if (row.getRowNum() == 0) continue;
 
-                // Skip empty rows
                 if (isRowEmpty(row)) continue;
 
                 CandidateDTO dto = new CandidateDTO();
@@ -387,7 +382,7 @@ public class CertificateService {
                         SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
                         return sdf.format(cell.getDateCellValue());
                     }
-                    // Check if it's an integer value
+
                     double numValue = cell.getNumericCellValue();
                     if (numValue == Math.floor(numValue)) {
                         return String.valueOf((long) numValue);
@@ -397,11 +392,11 @@ public class CertificateService {
                 case BOOLEAN:
                     return String.valueOf(cell.getBooleanCellValue());
                 case FORMULA:
-                    // Handle formula cells by evaluating them first
+
                     try {
                         FormulaEvaluator evaluator = cell.getSheet().getWorkbook().getCreationHelper().createFormulaEvaluator();
                         CellValue cellValue = evaluator.evaluate(cell);
-                        // Now handle the evaluated cell value based on its type
+
                         switch (cellValue.getCellType()) {
                             case STRING:
                                 return cellValue.getStringValue().trim();
@@ -422,7 +417,7 @@ public class CertificateService {
                                 return "";
                         }
                     } catch (Exception e) {
-                        // If evaluation fails, return the formula string
+
                         return cell.getCellFormula();
                     }
                 default:

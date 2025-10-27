@@ -1,11 +1,21 @@
 "use client";
+
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom"; 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { FileSpreadsheet, Image, Clock, CheckCircle, FileImage, Stamp } from "lucide-react";
+import {
+  FileSpreadsheet,
+  Image,
+  Clock,
+  CheckCircle,
+  FileImage,
+  Stamp,
+  UploadCloud,
+} from "lucide-react";
 import axios from "axios";
 
 interface TemplateType {
@@ -37,21 +47,26 @@ function UploadCard({
   preview?: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center bg-white rounded-xl shadow-md p-4 border border-gray-200 hover:shadow-lg transition w-full">
+    <div className="flex flex-col items-center bg-white rounded-2xl shadow-lg p-4 border border-gray-200 hover:shadow-xl transition w-full">
       <div className="text-indigo-600 mb-2">{icon}</div>
-      <label className="text-sm font-medium mb-1">{title}</label>
-      <Input type="file" accept={accept} onChange={onChange} className="mb-2 w-full max-w-xs" />
+      <label className="text-sm font-semibold mb-2">{title}</label>
+      <Input
+        type="file"
+        accept={accept}
+        onChange={onChange}
+        className="w-full max-w-xs text-sm cursor-pointer border-dashed border-2 border-indigo-400 hover:border-indigo-600 transition"
+      />
       {file && (
-        <div className="flex flex-col items-center mt-2 w-full">
-          <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg w-full justify-between">
-            <span className="truncate">{file.name}</span>
-            <Badge variant="secondary">Ready</Badge>
+        <div className="flex flex-col items-center mt-3 w-full">
+          <div className="flex items-center gap-2 bg-indigo-50 p-2 rounded-lg w-full justify-between">
+            <span className="truncate text-sm font-medium">{file.name}</span>
+            <Badge className="bg-indigo-500 text-white">Ready</Badge>
           </div>
           {preview && file.type.startsWith("image/") && (
             <img
               src={URL.createObjectURL(file)}
               alt="preview"
-              className="h-20 object-contain mt-2 rounded-md border"
+              className="h-20 object-contain mt-2 rounded-md border shadow-sm"
             />
           )}
         </div>
@@ -61,37 +76,40 @@ function UploadCard({
 }
 
 export default function CertificatePage() {
+  const navigate = useNavigate(); 
   const [templates, setTemplates] = useState<TemplateType[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [templateImages, setTemplateImages] = useState<string[]>([]);
-  const [files, setFiles] = useState<TemplateFiles>({ excel: null, zip: null, logo: null, sign: null });
+  const [files, setFiles] = useState<TemplateFiles>({
+    excel: null,
+    zip: null,
+    logo: null,
+    sign: null,
+  });
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [role, setRole] = useState<string>(""); // admin/user
+  const [role, setRole] = useState<string>("");
   const { toast } = useToast();
 
   const token = typeof window !== "undefined" ? sessionStorage.getItem("authToken") : null;
 
-  // Fetch templates based on role
   useEffect(() => {
     if (!token) {
       toast({
         title: "Unauthorized",
-        description: "No JWT token found. Please login again.",
+        description: "Please login again.",
         variant: "destructive",
       });
       return;
     }
 
-    // Decode token locally to extract role (optional, if backend sends role separately you can skip)
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
-      setRole(payload.role || "user");
+      setRole(payload.role?.toUpperCase() || "USER");
     } catch (e) {
-      console.error("Failed to parse JWT token", e);
+      console.error("JWT parse error", e);
     }
 
-    
     axios
       .get("http://localhost:8086/templates", {
         headers: { Authorization: `Bearer ${token}` },
@@ -107,7 +125,7 @@ export default function CertificatePage() {
       });
   }, [token]);
 
-  // Fetch selected template images
+
   useEffect(() => {
     if (!selectedTemplateId || !token) {
       setTemplateImages([]);
@@ -211,19 +229,31 @@ export default function CertificatePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 py-10 px-4 flex justify-center">
-      <Card className="w-full max-w-6xl shadow-2xl rounded-3xl p-6 bg-white border border-gray-200">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-white to-purple-100 py-10 px-4 flex justify-center items-center">
+      <Card className="w-full max-w-7xl shadow-2xl rounded-3xl p-6 bg-white border border-gray-200">
         <CardHeader className="text-center mb-6">
           <CardTitle className="text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
             Certificate Management
           </CardTitle>
           <p className="text-sm text-gray-500 mt-1">Role: {role}</p>
+
+          {role === "ADMIN" && (
+            <div className="flex justify-center mt-4">
+              <Button
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-2 rounded-full flex items-center gap-2 hover:scale-105 transition"
+                onClick={() => navigate("/upload-template")}
+              >
+                <UploadCloud className="h-5 w-5" /> Upload New Template
+              </Button>
+            </div>
+          )}
         </CardHeader>
 
         <CardContent className="space-y-6">
+          {/* Template Selection */}
           <div className="flex flex-col items-center gap-2">
             <select
-              className="w-full md:w-[85%] border rounded-lg p-3 text-sm focus:ring focus:ring-indigo-400"
+              className="w-full md:w-[85%] border rounded-lg p-3 text-sm focus:ring focus:ring-indigo-400 shadow-sm"
               value={selectedTemplateId ?? ""}
               onChange={(e) => setSelectedTemplateId(Number(e.target.value))}
             >
@@ -240,21 +270,23 @@ export default function CertificatePage() {
             </select>
           </div>
 
+          {/* Template Preview */}
           {templateImages.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
               {templateImages.map((img, idx) => (
                 <img
                   key={idx}
                   src={img}
-                  alt={`Template Image ${idx + 1}`}
-                  className="h-28 object-contain rounded-md border"
+                  alt={`Template ${idx + 1}`}
+                  className="h-28 sm:h-32 md:h-40 w-full object-contain rounded-xl border hover:shadow-md transition"
                 />
               ))}
             </div>
           )}
 
+          {/* Upload Cards */}
           {selectedTemplate && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-6">
               {requiredFields.includes("excel") && (
                 <UploadCard
                   title="Upload Excel"
@@ -296,12 +328,13 @@ export default function CertificatePage() {
             </div>
           )}
 
+          {/* Generate Button */}
           {selectedTemplate && (
-            <div className="text-center mt-6">
+            <div className="text-center mt-8">
               <Button
                 onClick={handleGenerate}
                 disabled={isUploading || requiredFields.some((f) => !files[f])}
-                className="px-8 py-3 text-lg rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:shadow-xl text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-8 py-3 text-lg rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:shadow-xl text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
                 {isUploading ? (
                   <>
@@ -313,7 +346,9 @@ export default function CertificatePage() {
                   </>
                 )}
               </Button>
-              {errorMessage && <p className="text-red-600 mt-2 font-medium">{errorMessage}</p>}
+              {errorMessage && (
+                <p className="text-red-600 mt-3 font-medium text-sm">{errorMessage}</p>
+              )}
             </div>
           )}
         </CardContent>

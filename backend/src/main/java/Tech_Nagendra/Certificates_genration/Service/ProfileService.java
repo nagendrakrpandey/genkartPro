@@ -29,7 +29,7 @@ public class ProfileService {
 
     public UserProfile findById(Long userId) {
         return profileRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
     }
 
     public ProfileDto getProfile(String token) {
@@ -41,15 +41,20 @@ public class ProfileService {
     public ProfileDto updateProfile(String token, ProfileDto profileDto) {
         Long currentUserId = extractAndValidateToken(token);
         UserProfile currentUser = findById(currentUserId);
+        UserProfile targetUser = currentUser;
 
-        Long targetUserId = profileDto.getId() != null ? profileDto.getId() : currentUserId;
-        UserProfile targetUser = findById(targetUserId);
+        if (profileDto.getName() != null && !profileDto.getName().isBlank()) {
+            targetUser.setName(profileDto.getName());
+        }
+        if (profileDto.getUsername() != null && !profileDto.getUsername().isBlank()) {
+            targetUser.setUsername(profileDto.getUsername());
+        }
+        if (profileDto.getEmail() != null && !profileDto.getEmail().isBlank()) {
+            targetUser.setEmail(profileDto.getEmail());
+        }
 
-        if (profileDto.getName() != null) targetUser.setName(profileDto.getName());
-        if (profileDto.getUsername() != null) targetUser.setUsername(profileDto.getUsername());
-        if (profileDto.getEmail() != null) targetUser.setEmail(profileDto.getEmail());
-
-        targetUser.setModifiedBy(currentUserId);
+        // ✅ Fix: modifiedBy must be UserProfile object, not Long
+        targetUser.setModifiedBy(currentUser);
 
         UserProfile updated = profileRepository.save(targetUser);
         return mapToDto(updated);
@@ -64,13 +69,14 @@ public class ProfileService {
         }
 
         user.setPassword(passwordEncoder.encode(dto.getNewPassword()));
+        user.setModifiedBy(user); // optional: mark who changed password
         profileRepository.save(user);
         return true;
     }
 
     public ProfileStatsDto getStats(String token) {
         Long currentUserId = extractAndValidateToken(token);
-        UserProfile user = findById(currentUserId);
+        findById(currentUserId);
 
         long totalCertificates = reportRepository.countByGeneratedBy_Id(currentUserId);
         long activeCertificates = reportRepository.countByGeneratedBy_IdAndStatus(currentUserId, "ACTIVE");
@@ -94,6 +100,7 @@ public class ProfileService {
         try {
             Long userId = jwtUtil.extractUserId(token);
             UserProfile user = findById(userId);
+
             if (user.getLoginToken() == null || !user.getLoginToken().equals(token)) {
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired token");
             }
@@ -116,8 +123,8 @@ public class ProfileService {
                 user.getRole(),
                 user.getCreatedAt(),
                 user.getModifiedAt(),
-                user.getCreatedBy(),
-                user.getModifiedBy()
+                user.getCreatedBy() != null ? user.getCreatedBy().getId() : null, // ✅ Fix here
+                user.getModifiedBy() != null ? user.getModifiedBy().getId() : null  // ✅ Fix here
         );
     }
 }

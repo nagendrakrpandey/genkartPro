@@ -28,27 +28,51 @@ public class TemplateService {
 
     private static final String TEMPLATE_BASE_PATH = "C:/certificate_storage/templates/";
 
-    // Template save करने का method
     public TemplateDto saveTemplate(Long userId,
                                     String templateName,
                                     Integer imageType,
-                                    MultipartFile jrxml,
+                                    MultipartFile[] jrxmlFiles,
                                     MultipartFile[] images) throws IOException {
+
+        // --- Step 1: Validate and sanitize input
+        if (templateName == null || templateName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Template name cannot be empty");
+        }
+        templateName = templateName.trim();
 
         UserProfile currentUser = profileRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Logged-in user not found"));
 
-        File folder = new File(TEMPLATE_BASE_PATH + templateName);
-        if (!folder.exists()) folder.mkdirs();
+        // --- Step 2: Ensure base folder exists
+        File baseDir = new File(TEMPLATE_BASE_PATH);
+        if (!baseDir.exists()) {
+            baseDir.mkdirs();
+        }
 
-        File jrxmlFile = new File(folder, jrxml.getOriginalFilename());
-        jrxml.transferTo(jrxmlFile);
+        // --- Step 3: Create template folder
+        File templateFolder = new File(baseDir, templateName);
+        if (!templateFolder.exists()) {
+            templateFolder.mkdirs();
+        }
 
+        // --- Step 4: Save JRXML files
+        List<String> jrxmlPaths = new ArrayList<>();
+        if (jrxmlFiles != null) {
+            for (MultipartFile jrxml : jrxmlFiles) {
+                if (jrxml.isEmpty()) continue;
+
+                File jrxmlFile = new File(templateFolder, jrxml.getOriginalFilename());
+                jrxml.transferTo(jrxmlFile);
+                jrxmlPaths.add(jrxmlFile.getAbsolutePath());
+            }
+        }
+
+        // --- Step 5: Save template entity
         Template template = new Template();
         template.setTemplateName(templateName);
         template.setImageType(imageType);
-        template.setTemplateFolder(folder.getAbsolutePath());
-        template.setJrxmlPath(jrxmlFile.getAbsolutePath());
+        template.setTemplateFolder(templateFolder.getAbsolutePath());
+        template.setJrxmlPath(String.join(",", jrxmlPaths));
         template.setCreatedBy(currentUser);
         template.setModifiedBy(currentUser);
         template.setCreatedAt(LocalDateTime.now());
@@ -56,24 +80,24 @@ public class TemplateService {
 
         Template savedTemplate = templateRepository.save(template);
 
+        // --- Step 6: Save images if provided
         List<TemplateImage> savedImages = new ArrayList<>();
         if (images != null) {
             for (MultipartFile image : images) {
                 if (image.isEmpty()) continue;
 
-                File imgFile = new File(folder, image.getOriginalFilename());
+                File imgFile = new File(templateFolder, image.getOriginalFilename());
                 image.transferTo(imgFile);
 
                 TemplateImage ti = new TemplateImage();
                 ti.setTemplate(savedTemplate);
                 ti.setImagePath(imgFile.getAbsolutePath());
                 ti.setImageType(imageType);
-
                 savedImages.add(templateImageRepository.save(ti));
             }
         }
-        savedTemplate.setImages(savedImages);
 
+        savedTemplate.setImages(savedImages);
         List<String> imagePaths = savedImages.stream()
                 .map(TemplateImage::getImagePath)
                 .collect(Collectors.toList());
@@ -81,12 +105,10 @@ public class TemplateService {
         return mapToDto(savedTemplate, imagePaths);
     }
 
-    // Single template fetch करने का method
     public TemplateDto getTemplateByIdForUser(Long templateId, Long userId, String role) throws Exception {
         Template template = templateRepository.findById(templateId)
                 .orElseThrow(() -> new RuntimeException("Template not found"));
 
-        // Admin को सब template access, normal user सिर्फ अपने-created template
         if (!"ADMIN".equalsIgnoreCase(role) && !template.getCreatedBy().getId().equals(userId)) {
             throw new RuntimeException("You do not have access to this template");
         }
@@ -98,26 +120,19 @@ public class TemplateService {
         return mapToDto(template, imagePaths);
     }
 
-    // All templates fetch करने का method
     public List<TemplateDto> getAllTemplates(Long userId, String role) {
-        List<Template> templates;
-
-        if ("ADMIN".equalsIgnoreCase(role)) {
-            // Admin को सारे templates दिखेंगे
-            templates = templateRepository.findAll();
-        } else {
-            // Normal user को सिर्फ उनके created templates दिखेंगे
-            templates = templateRepository.findByCreatedBy_Id(userId);
-        }
+        List<Template> templates = "ADMIN".equalsIgnoreCase(role)
+                ? templateRepository.findAll()
+                : templateRepository.findByCreatedBy_Id(userId);
 
         return templates.stream()
-                .map(template -> mapToDto(template, template.getImages().stream()
-                        .map(TemplateImage::getImagePath)
-                        .collect(Collectors.toList())))
+                .map(template -> mapToDto(template,
+                        template.getImages().stream()
+                                .map(TemplateImage::getImagePath)
+                                .collect(Collectors.toList())))
                 .collect(Collectors.toList());
     }
 
-    // Total templates count (Admin & User wise)
     public Long getTotalTemplates(Long userId, String role) {
         return "ADMIN".equalsIgnoreCase(role)
                 ? templateRepository.count()

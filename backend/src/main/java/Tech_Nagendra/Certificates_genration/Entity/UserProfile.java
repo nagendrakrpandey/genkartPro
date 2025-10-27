@@ -1,7 +1,6 @@
 package Tech_Nagendra.Certificates_genration.Entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.springframework.data.annotation.CreatedBy;
@@ -44,9 +43,12 @@ public class UserProfile {
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
+    // 🔹 Yeh relation dusre UserProfile se link karega jinhone ye record create kiya hai
     @CreatedBy
-    @Column(updatable = false)
-    private Long createdBy;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by")
+    @JsonIgnore
+    private UserProfile createdBy;
 
     @Column(name = "login_token")
     private String loginToken;
@@ -54,9 +56,12 @@ public class UserProfile {
     @LastModifiedDate
     private LocalDateTime modifiedAt;
 
+    // 🔹 Yeh relation update karne wale UserProfile se link karega
     @LastModifiedBy
-    @Column(name = "modified_by")
-    private Long modifiedBy;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "modified_by")
+    @JsonIgnore
+    private UserProfile modifiedBy;
 
     @OneToMany(mappedBy = "createdBy", fetch = FetchType.LAZY)
     @JsonIgnore
@@ -87,7 +92,6 @@ public class UserProfile {
         return Objects.hash(getId());
     }
 
-    // Custom toString() that avoids circular references
     @Override
     public String toString() {
         return "UserProfile{" +
@@ -98,10 +102,9 @@ public class UserProfile {
                 ", email='" + email + '\'' +
                 ", role='" + role + '\'' +
                 ", createdAt=" + createdAt +
-                ", createdBy=" + createdBy +
-                ", loginToken='" + (loginToken != null ? "[PROTECTED]" : null) + '\'' +
+                ", createdBy=" + (createdBy != null ? createdBy.getId() : null) +
                 ", modifiedAt=" + modifiedAt +
-                ", modifiedBy=" + modifiedBy +
+                ", modifiedBy=" + (modifiedBy != null ? modifiedBy.getId() : null) +
                 '}';
     }
 }
