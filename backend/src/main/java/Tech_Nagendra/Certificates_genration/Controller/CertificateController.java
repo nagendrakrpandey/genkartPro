@@ -1,9 +1,11 @@
 package Tech_Nagendra.Certificates_genration.Controller;
+
 import Tech_Nagendra.Certificates_genration.Entity.CandidateDTO;
 import Tech_Nagendra.Certificates_genration.Entity.Report;
 import Tech_Nagendra.Certificates_genration.Entity.UserProfile;
 import Tech_Nagendra.Certificates_genration.Security.UserPrincipal;
 import Tech_Nagendra.Certificates_genration.Service.CertificateService;
+import Tech_Nagendra.Certificates_genration.Service.DynamicFontService;
 import Tech_Nagendra.Certificates_genration.Service.ReportService;
 import Tech_Nagendra.Certificates_genration.Repository.ProfileRepository;
 import Tech_Nagendra.Certificates_genration.Utility.JwtUtil;
@@ -27,6 +29,7 @@ public class CertificateController {
     private final ReportService reportService;
     private final ProfileRepository profileRepository;
     private final JwtUtil jwtUtil;
+    private final DynamicFontService dynamicFontService;
 
     @Value("${certificate.temp.path:C:/certificate_storage/certificates}")
     private String tempPath;
@@ -34,93 +37,150 @@ public class CertificateController {
     public CertificateController(CertificateService certificateService,
                                  ReportService reportService,
                                  ProfileRepository profileRepository,
-                                 JwtUtil jwtUtil) {
+                                 JwtUtil jwtUtil,
+                                 DynamicFontService dynamicFontService) {
         this.certificateService = certificateService;
         this.reportService = reportService;
         this.profileRepository = profileRepository;
         this.jwtUtil = jwtUtil;
+        this.dynamicFontService = dynamicFontService;
     }
 
     @PostMapping(value = "/generate-zip/{templateId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<byte[]> generateCertificatesZip(
+    public ResponseEntity<?> generateCertificatesZip(
             @PathVariable Long templateId,
             @RequestPart("excel") MultipartFile excelFile,
             @RequestPart(value = "zipImage", required = false) MultipartFile zipImage,
             @RequestPart(value = "logo", required = false) MultipartFile logo,
             @RequestPart(value = "sign", required = false) MultipartFile sign,
-            @RequestHeader("Authorization") String tokenHeader) throws Exception {
+            @RequestHeader("Authorization") String tokenHeader) {
 
-        // Extract userId from token
-        String token = tokenHeader.startsWith("Bearer ") ? tokenHeader.substring(7) : tokenHeader;
-        Long userId = jwtUtil.extractUserId(token);
-
-        UserProfile userProfile = profileRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        // Convert UserProfile to UserPrincipal
-        UserPrincipal currentUser = new UserPrincipal(userProfile);
-
-        // Create temp folder
-        File dir = new File(tempPath);
-        if (!dir.exists()) dir.mkdirs();
-
-        // Save Excel to temp
-        File tempExcel = new File(dir, System.currentTimeMillis() + "_" + excelFile.getOriginalFilename());
-        try (InputStream in = excelFile.getInputStream(); FileOutputStream fos = new FileOutputStream(tempExcel)) {
-            in.transferTo(fos);
-        }
-
-        // Save uploaded files
+        File tempExcel = null;
         Map<String, File> uploadedFiles = new HashMap<>();
-        if (zipImage != null && !zipImage.isEmpty()) saveTempFile(uploadedFiles, zipImage, dir, "zipImage");
-        if (logo != null && !logo.isEmpty()) saveTempFile(uploadedFiles, logo, dir, "logo");
-        if (sign != null && !sign.isEmpty()) saveTempFile(uploadedFiles, sign, dir, "sign");
+        File dir = null;
 
-        // Generate certificates and reports
-        Map<String, Object> result = certificateService.generateCertificatesAndReports(
-                templateId,
-                tempExcel,
-                uploadedFiles.isEmpty() ? null : uploadedFiles,
-                tempPath,
-                currentUser
-        );
+        try {
+            if (excelFile == null || excelFile.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Excel file is required"));
+            }
 
-        List<File> pdfFiles = (List<File>) result.get("pdfFiles");
-        List<CandidateDTO> candidates = (List<CandidateDTO>) result.get("candidates");
+            String token = tokenHeader.startsWith("Bearer ") ? tokenHeader.substring(7) : tokenHeader;
+            Long userId = jwtUtil.extractUserId(token);
 
-        for (CandidateDTO candidate : candidates) {
-            reportService.saveCandidateReport(candidate, templateId, userId, currentUser);
-        }
+            UserProfile userProfile = profileRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
 
-        // Create ZIP
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
-            int size = Math.min(pdfFiles.size(), candidates.size());
-            for (int i = 0; i < size; i++) {
-                File pdf = pdfFiles.get(i);
-                CandidateDTO candidate = candidates.get(i);
-                if (pdf.exists()) {
-                    String safeName = candidate.getCandidateName() != null
-                            ? candidate.getCandidateName().replaceAll("[^a-zA-Z0-9]", "_")
-                            : "Candidate";
-                    String zipEntryName = safeName + "_" + candidate.getSid() + ".pdf";
-                    zos.putNextEntry(new ZipEntry(zipEntryName));
-                    Files.copy(pdf.toPath(), zos);
-                    zos.closeEntry();
+            UserPrincipal currentUser = new UserPrincipal(userProfile);
+
+            dir = new File(tempPath);
+            if (!dir.exists()) {
+                boolean created = dir.mkdirs();
+                if (!created) {
+                    throw new RuntimeException("Failed to create temp directory: " + tempPath);
                 }
             }
+
+            tempExcel = new File(dir, System.currentTimeMillis() + "_" + excelFile.getOriginalFilename());
+            try (InputStream in = excelFile.getInputStream(); FileOutputStream fos = new FileOutputStream(tempExcel)) {
+                in.transferTo(fos);
+            }
+
+            if (zipImage != null && !zipImage.isEmpty()) saveTempFile(uploadedFiles, zipImage, dir, "zipImage");
+            if (logo != null && !logo.isEmpty()) saveTempFile(uploadedFiles, logo, dir, "logo");
+            if (sign != null && !sign.isEmpty()) saveTempFile(uploadedFiles, sign, dir, "sign");
+
+            Map<String, Object> result = certificateService.generateCertificatesAndReports(
+                    templateId,
+                    tempExcel,
+                    uploadedFiles.isEmpty() ? null : uploadedFiles,
+                    tempPath,
+                    currentUser
+            );
+
+            if (result.containsKey("error") && (Boolean) result.get("error")) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of("error", "Certificate generation failed", "message", result.get("message")));
+            }
+
+            List<File> pdfFiles = (List<File>) result.get("pdfFiles");
+            List<CandidateDTO> candidates = (List<CandidateDTO>) result.get("candidates");
+
+            if (pdfFiles == null) pdfFiles = new ArrayList<>();
+            if (candidates == null) candidates = new ArrayList<>();
+
+            if (pdfFiles.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of("error", "No PDF files generated"));
+            }
+
+            for (CandidateDTO candidate : candidates) {
+                try {
+                    reportService.saveCandidateReport(candidate, templateId, userId, currentUser);
+                } catch (Exception ignored) { }
+            }
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+                int successfulEntries = 0;
+                int size = Math.min(pdfFiles.size(), candidates.size());
+
+                for (int i = 0; i < size; i++) {
+                    File pdf = pdfFiles.get(i);
+                    CandidateDTO candidate = candidates.get(i);
+
+                    if (pdf != null && pdf.exists()) {
+                        try {
+                            String safeName = candidate.getCandidateName() != null
+                                    ? candidate.getCandidateName().replaceAll("[^a-zA-Z0-9.-]", "_")
+                                    : "Candidate";
+                            String zipEntryName = safeName + "_" + (candidate.getSid() != null ? candidate.getSid() : "Unknown") + ".pdf";
+
+                            zos.putNextEntry(new ZipEntry(zipEntryName));
+                            Files.copy(pdf.toPath(), zos);
+                            zos.closeEntry();
+                            successfulEntries++;
+                        } catch (Exception e) { }
+                    }
+                }
+
+                if (pdfFiles.size() > candidates.size()) {
+                    for (int i = candidates.size(); i < pdfFiles.size(); i++) {
+                        File pdf = pdfFiles.get(i);
+                        if (pdf != null && pdf.exists()) {
+                            try {
+                                String zipEntryName = "Certificate_" + (i + 1) + ".pdf";
+                                zos.putNextEntry(new ZipEntry(zipEntryName));
+                                Files.copy(pdf.toPath(), zos);
+                                zos.closeEntry();
+                                successfulEntries++;
+                            } catch (Exception e) { }
+                        }
+                    }
+                }
+
+                if (successfulEntries == 0) {
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body(Map.of("error", "No files could be added to ZIP"));
+                }
+            }
+
+            byte[] zipBytes = baos.toByteArray();
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.setContentDisposition(ContentDisposition.builder("attachment")
+                    .filename("certificates_" + System.currentTimeMillis() + ".zip")
+                    .build());
+            headers.setContentLength(zipBytes.length);
+
+            return new ResponseEntity<>(zipBytes, headers, HttpStatus.OK);
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Certificate generation failed", "message", e.getMessage()));
+        } finally {
+            cleanupTempFiles(tempExcel, uploadedFiles);
         }
-
-        // Cleanup temp files
-        tempExcel.delete();
-        uploadedFiles.values().forEach(File::delete);
-        pdfFiles.forEach(File::delete);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-        headers.setContentDisposition(ContentDisposition.builder("attachment").filename("certificates.zip").build());
-
-        return new ResponseEntity<>(baos.toByteArray(), headers, HttpStatus.OK);
     }
 
     private void saveTempFile(Map<String, File> uploadedFiles, MultipartFile file, File dir, String key) throws IOException {
@@ -131,21 +191,117 @@ public class CertificateController {
         uploadedFiles.put(key, temp);
     }
 
+    private void cleanupTempFiles(File excelFile, Map<String, File> uploadedFiles) {
+        try {
+            if (excelFile != null && excelFile.exists()) excelFile.delete();
+            for (Map.Entry<String, File> entry : uploadedFiles.entrySet()) {
+                File file = entry.getValue();
+                if (file != null && file.exists()) file.delete();
+            }
+        } catch (Exception ignored) { }
+    }
+
     @GetMapping("/reports/all")
-    public ResponseEntity<List<Report>> getAllReports(@RequestHeader("Authorization") String tokenHeader) {
-        String token = tokenHeader.startsWith("Bearer ") ? tokenHeader.substring(7) : tokenHeader;
-        Long userId = jwtUtil.extractUserId(token);
+    public ResponseEntity<?> getAllReports(@RequestHeader("Authorization") String tokenHeader) {
+        try {
+            String token = tokenHeader.startsWith("Bearer ") ? tokenHeader.substring(7) : tokenHeader;
+            Long userId = jwtUtil.extractUserId(token);
 
-        UserProfile userProfile = profileRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+            UserProfile userProfile = profileRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
 
-        UserPrincipal currentUser = new UserPrincipal(userProfile);
+            UserPrincipal currentUser = new UserPrincipal(userProfile);
 
-        return ResponseEntity.ok(reportService.getAllReports(currentUser));
+            List<Report> reports = reportService.getAllReports(currentUser);
+            return ResponseEntity.ok(reports);
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to fetch reports", "message", e.getMessage()));
+        }
     }
 
     @GetMapping("/reports/count/month")
-    public ResponseEntity<Long> countReportsThisMonth() {
-        return ResponseEntity.ok(reportService.countCertificatesThisMonth());
+    public ResponseEntity<?> countReportsThisMonth() {
+        try {
+            Long count = reportService.countCertificatesThisMonth();
+            return ResponseEntity.ok(Map.of("count", count));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to count reports", "message", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/fonts/status")
+    public ResponseEntity<?> getFontStatus() {
+        try {
+            Map<String, Object> fontInfo = dynamicFontService.getFontInfo();
+            return ResponseEntity.ok(fontInfo);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to get font status", "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/fonts/reload")
+    public ResponseEntity<?> reloadFonts() {
+        try {
+            dynamicFontService.reloadFonts();
+            return ResponseEntity.ok(Map.of("message", "Fonts reloaded successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to reload fonts", "message", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/fonts/available")
+    public ResponseEntity<?> getAvailableFonts() {
+        try {
+            Set<String> availableFonts = dynamicFontService.getAvailableFontFamilies();
+            return ResponseEntity.ok(Map.of("availableFonts", availableFonts, "totalFonts", availableFonts.size()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to get available fonts", "message", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/fonts/check/{fontName}")
+    public ResponseEntity<?> checkFont(@PathVariable String fontName) {
+        try {
+            boolean isAvailable = dynamicFontService.isFontFamilyAvailable(fontName);
+            return ResponseEntity.ok(Map.of("fontName", fontName, "available", isAvailable));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to check font", "message", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, Object>> healthCheck() {
+        Map<String, Object> healthInfo = new HashMap<>();
+        healthInfo.put("status", "UP");
+        healthInfo.put("service", "Certificate Generation");
+        healthInfo.put("timestamp", new Date());
+        healthInfo.put("tempPath", tempPath);
+
+        File tempDir = new File(tempPath);
+        healthInfo.put("tempDirectoryExists", tempDir.exists());
+        healthInfo.put("tempDirectoryWritable", tempDir.canWrite());
+
+        return ResponseEntity.ok(healthInfo);
+    }
+
+    @GetMapping("/status/{templateId}")
+    public ResponseEntity<?> getGenerationStatus(@PathVariable Long templateId) {
+        try {
+            Map<String, Object> status = new HashMap<>();
+            status.put("templateId", templateId);
+            status.put("status", "ready");
+            status.put("message", "Certificate generation service is available");
+            return ResponseEntity.ok(status);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Status check failed", "message", e.getMessage()));
+        }
     }
 }
