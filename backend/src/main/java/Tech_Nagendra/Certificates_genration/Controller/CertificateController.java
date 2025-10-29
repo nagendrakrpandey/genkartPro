@@ -1,5 +1,4 @@
 package Tech_Nagendra.Certificates_genration.Controller;
-
 import Tech_Nagendra.Certificates_genration.Entity.CandidateDTO;
 import Tech_Nagendra.Certificates_genration.Entity.Report;
 import Tech_Nagendra.Certificates_genration.Entity.UserProfile;
@@ -31,7 +30,8 @@ public class CertificateController {
     private final JwtUtil jwtUtil;
     private final DynamicFontService dynamicFontService;
 
-    @Value("${certificate.temp.path:C:/certificate_storage/certificates}")
+   // @Value("${certificate.temp.path:C:/certificate_storage/certificates}")
+   @Value("${certificate.template.path:${user.dir}/templates/}")
     private String tempPath;
 
     public CertificateController(CertificateService certificateService,

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -229,7 +231,7 @@ export default function CertificatePage() {
 
   return (
     <>
-      {/* 🌈 Enhanced Loader Overlay */}
+      {/*  Enhanced Loader Overlay */}
       {isUploading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50 backdrop-blur-md transition-opacity animate-fadeIn">
           <div className="relative flex items-center justify-center mb-6">

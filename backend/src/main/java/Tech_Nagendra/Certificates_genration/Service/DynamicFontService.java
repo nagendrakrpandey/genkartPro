@@ -1,11 +1,14 @@
 package Tech_Nagendra.Certificates_genration.Service;
 
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.*;
 import java.util.List;
@@ -16,13 +19,16 @@ import java.util.jar.JarFile;
 @Service
 public class DynamicFontService {
 
+    @Value("${custom.fonts.dir:src/main/resources/fonts}")
+    private String customFontsDir; // 👈 your manual font JAR/TTF/OTF directory
+
     private final Map<String, Font> loadedFonts = new ConcurrentHashMap<>();
     private final Set<String> availableFontFamilies = ConcurrentHashMap.newKeySet();
     private boolean fontsInitialized = false;
 
     @PostConstruct
     public void autoLoadFonts() {
-        System.out.println("Auto-loading fonts on application startup...");
+        System.out.println("Auto-loading fonts from directory: " + customFontsDir);
         new Thread(() -> {
             try {
                 Thread.sleep(3000);
@@ -35,34 +41,33 @@ public class DynamicFontService {
 
     public synchronized void loadFontsDynamically() {
         if (fontsInitialized) {
-            System.out.println(" Fonts already initialized");
+            System.out.println("Fonts already initialized");
             return;
         }
 
         try {
             GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+            System.out.println("Starting dynamic font loading...");
 
-            System.out.println(" Starting dynamic font loading...");
+            // Load fonts from classpath (resources/fonts/)
+            int count = loadFontsFromClasspath("classpath:fonts/**/*.ttf");
+            count += loadFontsFromClasspath("classpath:fonts/**/*.otf");
+            count += loadFontsFromClasspath("classpath:fonts/**/*.jar");
 
-            int resourcesCount = loadFontsFromClasspath("classpath:fonts/**/*.ttf");
-            resourcesCount += loadFontsFromClasspath("classpath:fonts/**/*.otf");
-            resourcesCount += loadFontsFromClasspath("classpath:fonts/**/*.jar"); // JAR files
-
-            int externalCount = loadFontsFromExternalDirectory();
+            // Load from your manual local fonts folder
+            count += loadFontsFromPath(customFontsDir);
 
             registerFontsWithSystem(ge);
             collectAvailableFontFamilies(ge);
 
             fontsInitialized = true;
 
-            System.out.println(" Dynamic font loading completed!");
-            System.out.println(" Loaded " + loadedFonts.size() + " font files");
-            System.out.println(" Available font families: " + availableFontFamilies.size());
-
-            printLoadedFonts();
+            System.out.println("✅ Dynamic font loading completed!");
+            System.out.println("Loaded " + loadedFonts.size() + " fonts.");
+            System.out.println("Available families: " + availableFontFamilies.size());
 
         } catch (Exception e) {
-            System.err.println("Error in dynamic font loading: " + e.getMessage());
+            System.err.println("❌ Error in dynamic font loading: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -73,147 +78,59 @@ public class DynamicFontService {
             PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
             Resource[] resources = resolver.getResources(pattern);
 
-            System.out.println("Found " + resources.length + " resources matching: " + pattern);
-
             for (Resource resource : resources) {
-                try {
-                    String filename = resource.getFilename();
-                    if (filename == null) continue;
+                String filename = resource.getFilename();
+                if (filename == null) continue;
 
-                    if (filename.toLowerCase().endsWith(".jar")) {
-                        count += loadFontsFromJar(resource);
-                    } else {
-                        count += loadIndividualFontFile(resource, filename);
-                    }
-                } catch (Exception e) {
-                    System.err.println(" Error loading classpath resource " + resource.getFilename() + ": " + e.getMessage());
+                if (filename.toLowerCase().endsWith(".jar")) {
+                    count += loadFontsFromJar(resource);
+                } else {
+                    count += loadIndividualFontFile(resource, filename);
                 }
             }
         } catch (Exception e) {
-            System.err.println(" Error scanning classpath fonts: " + e.getMessage());
+            System.err.println("Error loading fonts from classpath: " + e.getMessage());
         }
         return count;
     }
 
     private int loadIndividualFontFile(Resource resource, String filename) {
-        try {
-            String fontKey = generateFontKey(filename);
-
-            if (!loadedFonts.containsKey(fontKey)) {
-                try (InputStream is = resource.getInputStream()) {
-                    Font font = Font.createFont(Font.TRUETYPE_FONT, is);
-                    loadedFonts.put(fontKey, font);
-                    System.out.println("Loaded classpath font: " + filename);
-                    return 1;
-                }
-            }
+        try (InputStream is = resource.getInputStream()) {
+            Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+            loadedFonts.putIfAbsent(filename, font);
+            System.out.println("Loaded classpath font: " + filename);
+            return 1;
         } catch (Exception e) {
-            System.err.println(" Error loading font file " + filename + ": " + e.getMessage());
+            System.err.println("Error loading font " + filename + ": " + e.getMessage());
         }
         return 0;
     }
 
     private int loadFontsFromJar(Resource jarResource) {
-        int fontCount = 0;
-        System.out.println("Processing JAR file: " + jarResource.getFilename());
-
-        try {
-            // Create temporary file for the JAR
-            java.io.File tempJarFile = java.io.File.createTempFile("fontjar_", ".jar");
-            tempJarFile.deleteOnExit();
-
-            // Copy JAR resource to temporary file
-            try (InputStream is = jarResource.getInputStream();
-                 java.io.FileOutputStream fos = new java.io.FileOutputStream(tempJarFile)) {
-                byte[] buffer = new byte[1024];
-                int bytesRead;
-                while ((bytesRead = is.read(buffer)) != -1) {
-                    fos.write(buffer, 0, bytesRead);
-                }
-            }
-
-            // Process JAR file
-            try (JarFile jarFile = new JarFile(tempJarFile)) {
-                Enumeration<JarEntry> entries = jarFile.entries();
-
-                while (entries.hasMoreElements()) {
-                    JarEntry entry = entries.nextElement();
-                    String entryName = entry.getName().toLowerCase();
-
-                    // Check if entry is a font file
-                    if (!entry.isDirectory() &&
-                            (entryName.endsWith(".ttf") || entryName.endsWith(".otf"))) {
-
-                        fontCount += extractAndLoadFontFromJar(jarFile, entry, entryName);
-                    }
-                }
-            }
-
-            System.out.println(" Loaded " + fontCount + " fonts from JAR: " + jarResource.getFilename());
-
-        } catch (Exception e) {
-            System.err.println(" Error processing JAR file " + jarResource.getFilename() + ": " + e.getMessage());
-            e.printStackTrace();
-        }
-        return fontCount;
-    }
-
-    private int extractAndLoadFontFromJar(JarFile jarFile, JarEntry entry, String entryName) {
-        try {
-            String fontKey = generateFontKey(entryName);
-
-            if (!loadedFonts.containsKey(fontKey)) {
-                // Create temporary file for the font
-                java.io.File tempFontFile = java.io.File.createTempFile("font_", getFileExtension(entryName));
-                tempFontFile.deleteOnExit();
-
-                // Extract font from JAR to temporary file
-                try (InputStream is = jarFile.getInputStream(entry);
-                     java.io.FileOutputStream fos = new java.io.FileOutputStream(tempFontFile)) {
-
-                    byte[] buffer = new byte[1024];
-                    int bytesRead;
-                    while ((bytesRead = is.read(buffer)) != -1) {
-                        fos.write(buffer, 0, bytesRead);
-                    }
-                }
-
-                // Load font from temporary file
-                Font font = Font.createFont(Font.TRUETYPE_FONT, tempFontFile);
-                loadedFonts.put(fontKey, font);
-
-                System.out.println("    Extracted font from JAR: " + entryName +
-                        " (Family: " + font.getFamily() + ")");
-                return 1;
-            }
-        } catch (Exception e) {
-            System.err.println(" Error extracting font from JAR entry " + entryName + ": " + e.getMessage());
-        }
-        return 0;
-    }
-
-    private String getFileExtension(String filename) {
-        int lastDot = filename.lastIndexOf('.');
-        return (lastDot == -1) ? ".tmp" : filename.substring(lastDot);
-    }
-
-    private int loadFontsFromExternalDirectory() {
         int count = 0;
         try {
-            String[] possiblePaths = {
-                    "C:/fonts",
-                    "D:/fonts",
-                    System.getProperty("user.home") + "/fonts",
-                    "/usr/share/fonts",
-                    "/Library/Fonts",
-                    "fonts/" // Current directory fonts folder
-            };
+            File tempJar = File.createTempFile("font_", ".jar");
+            try (InputStream is = jarResource.getInputStream();
+                 FileOutputStream fos = new FileOutputStream(tempJar)) {
+                is.transferTo(fos);
+            }
 
-            for (String path : possiblePaths) {
-                count += loadFontsFromPath(path);
+            try (JarFile jarFile = new JarFile(tempJar)) {
+                Enumeration<JarEntry> entries = jarFile.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry entry = entries.nextElement();
+                    if (!entry.isDirectory() && (entry.getName().endsWith(".ttf") || entry.getName().endsWith(".otf"))) {
+                        try (InputStream is = jarFile.getInputStream(entry)) {
+                            Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                            loadedFonts.putIfAbsent(entry.getName(), font);
+                            count++;
+                            System.out.println("Loaded font from JAR: " + entry.getName());
+                        }
+                    }
+                }
             }
         } catch (Exception e) {
-            System.err.println(" Error loading external fonts: " + e.getMessage());
+            System.err.println("Error loading fonts from JAR " + jarResource.getFilename() + ": " + e.getMessage());
         }
         return count;
     }
@@ -221,139 +138,90 @@ public class DynamicFontService {
     private int loadFontsFromPath(String directoryPath) {
         int count = 0;
         try {
-            java.io.File fontDir = new java.io.File(directoryPath);
-            if (!fontDir.exists() || !fontDir.isDirectory()) {
+            File dir = new File(directoryPath);
+            if (!dir.exists() || !dir.isDirectory()) {
+                System.out.println("No external font directory found at: " + directoryPath);
                 return 0;
             }
 
-            System.out.println(" Scanning external directory: " + directoryPath);
-
-            java.io.File[] files = fontDir.listFiles((dir, name) ->
-                    name.toLowerCase().endsWith(".ttf") ||
-                            name.toLowerCase().endsWith(".otf") ||
-                            name.toLowerCase().endsWith(".jar")
-            );
+            File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".ttf")
+                    || name.toLowerCase().endsWith(".otf")
+                    || name.toLowerCase().endsWith(".jar"));
 
             if (files != null) {
-                for (java.io.File file : files) {
-                    if (file.getName().toLowerCase().endsWith(".jar")) {
+                for (File file : files) {
+                    if (file.getName().endsWith(".jar")) {
                         count += loadFontsFromExternalJar(file);
                     } else {
                         count += loadIndividualExternalFont(file);
                     }
                 }
             }
+
         } catch (Exception e) {
-            System.err.println(" Error scanning directory " + directoryPath + ": " + e.getMessage());
+            System.err.println("Error loading fonts from " + directoryPath + ": " + e.getMessage());
         }
         return count;
     }
 
-    private int loadFontsFromExternalJar(java.io.File jarFile) {
-        int fontCount = 0;
-        System.out.println(" Processing external JAR: " + jarFile.getName());
-
+    private int loadFontsFromExternalJar(File jarFile) {
+        int count = 0;
         try (JarFile jar = new JarFile(jarFile)) {
             Enumeration<JarEntry> entries = jar.entries();
-
             while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
-                String entryName = entry.getName().toLowerCase();
-
-                if (!entry.isDirectory() &&
-                        (entryName.endsWith(".ttf") || entryName.endsWith(".otf"))) {
-
-                    fontCount += extractAndLoadFontFromJar(jar, entry, entryName);
+                if (!entry.isDirectory() && (entry.getName().endsWith(".ttf") || entry.getName().endsWith(".otf"))) {
+                    try (InputStream is = jar.getInputStream(entry)) {
+                        Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                        loadedFonts.putIfAbsent(entry.getName(), font);
+                        count++;
+                        System.out.println("Loaded font from external JAR: " + entry.getName());
+                    }
                 }
             }
-
-            System.out.println(" Loaded " + fontCount + " fonts from external JAR: " + jarFile.getName());
-
         } catch (Exception e) {
-            System.err.println(" Error processing external JAR " + jarFile.getName() + ": " + e.getMessage());
+            System.err.println("Error reading external JAR: " + e.getMessage());
         }
-        return fontCount;
+        return count;
     }
 
-    private int loadIndividualExternalFont(java.io.File fontFile) {
+    private int loadIndividualExternalFont(File file) {
         try {
-            String fontKey = generateFontKey(fontFile.getName());
-
-            if (!loadedFonts.containsKey(fontKey)) {
-                Font font = Font.createFont(Font.TRUETYPE_FONT, fontFile);
-                loadedFonts.put(fontKey, font);
-                System.out.println(" Loaded external font: " + fontFile.getName());
-                return 1;
-            }
+            Font font = Font.createFont(Font.TRUETYPE_FONT, file);
+            loadedFonts.putIfAbsent(file.getName(), font);
+            System.out.println("Loaded external font: " + file.getName());
+            return 1;
         } catch (Exception e) {
-            System.err.println("Error loading external font " + fontFile.getName() + ": " + e.getMessage());
+            System.err.println("Error loading external font " + file.getName() + ": " + e.getMessage());
         }
         return 0;
     }
 
     private void registerFontsWithSystem(GraphicsEnvironment ge) {
-        int registeredCount = 0;
+        int count = 0;
         for (Font font : loadedFonts.values()) {
             try {
                 ge.registerFont(font);
-                registeredCount++;
-            } catch (Exception e) {
-                System.err.println(" Error registering font: " + e.getMessage());
+                count++;
+            } catch (Exception ignored) {
             }
         }
-        System.out.println(" Registered " + registeredCount + " fonts with system");
+        System.out.println("Registered " + count + " fonts.");
     }
 
     private void collectAvailableFontFamilies(GraphicsEnvironment ge) {
-        String[] fontFamilies = ge.getAvailableFontFamilyNames();
         availableFontFamilies.clear();
-        availableFontFamilies.addAll(Arrays.asList(fontFamilies));
+        availableFontFamilies.addAll(Arrays.asList(ge.getAvailableFontFamilyNames()));
     }
 
-    private String generateFontKey(String filename) {
-        return filename.toLowerCase().replaceAll("[^a-z0-9.]", "_");
-    }
-
-    private void printLoadedFonts() {
-        System.out.println("\n LOADED FONT FILES:");
-        loadedFonts.keySet().stream()
-                .sorted()
-                .forEach(key -> {
-                    Font font = loadedFonts.get(key);
-                    System.out.println("   • " + key + " (Family: " + font.getFamily() + ")");
-                });
-
-        System.out.println("\n AVAILABLE FONT FAMILIES:");
-    }
-
+    // Public access methods
     public Font getFont(String fontName, int style, float size) {
         for (Map.Entry<String, Font> entry : loadedFonts.entrySet()) {
             if (entry.getKey().toLowerCase().contains(fontName.toLowerCase())) {
                 return entry.getValue().deriveFont(style, size);
             }
         }
-
         return new Font(fontName, style, (int) size);
-    }
-
-    public Set<String> getAvailableFontFamilies() {
-        return new HashSet<>(availableFontFamilies);
-    }
-
-    public Map<String, Font> getLoadedFonts() {
-        return new HashMap<>(loadedFonts);
-    }
-
-    public boolean isFontFamilyAvailable(String fontFamily) {
-        return availableFontFamilies.stream()
-                .anyMatch(family -> family.equalsIgnoreCase(fontFamily));
-    }
-
-    public synchronized void reloadFonts() {
-        fontsInitialized = false;
-        loadedFonts.clear();
-        availableFontFamilies.clear();
-        loadFontsDynamically();
     }
 
     public Map<String, Object> getFontInfo() {
@@ -361,14 +229,29 @@ public class DynamicFontService {
         info.put("loadedFontFiles", loadedFonts.size());
         info.put("availableFontFamilies", availableFontFamilies.size());
         info.put("fontsInitialized", fontsInitialized);
-        info.put("loadedFontKeys", new ArrayList<>(loadedFonts.keySet()));
-
-        List<String> sampleFamilies = availableFontFamilies.stream()
-                .sorted()
-                .limit(10)
-                .toList();
-        info.put("sampleFontFamilies", sampleFamilies);
-
+        info.put("fontDirectory", customFontsDir);
+        info.put("timestamp", new Date());
         return info;
+    }
+
+    // 🔧 --- Added for Controller Compatibility ---
+
+    public void reloadFonts() {
+        fontsInitialized = false;
+        loadedFonts.clear();
+        availableFontFamilies.clear();
+        loadFontsDynamically();
+    }
+
+    public Set<String> getAvailableFontFamilies() {
+        if (availableFontFamilies.isEmpty()) {
+            collectAvailableFontFamilies(GraphicsEnvironment.getLocalGraphicsEnvironment());
+        }
+        return new HashSet<>(availableFontFamilies);
+    }
+
+    public boolean isFontFamilyAvailable(String fontName) {
+        return availableFontFamilies.stream()
+                .anyMatch(f -> f.equalsIgnoreCase(fontName));
     }
 }

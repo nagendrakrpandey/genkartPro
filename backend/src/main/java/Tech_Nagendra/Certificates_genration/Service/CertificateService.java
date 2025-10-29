@@ -1,4 +1,5 @@
 package Tech_Nagendra.Certificates_genration.Service;
+
 import Tech_Nagendra.Certificates_genration.Entity.CandidateDTO;
 import Tech_Nagendra.Certificates_genration.Entity.Report;
 import Tech_Nagendra.Certificates_genration.Entity.Template;
@@ -6,14 +7,20 @@ import Tech_Nagendra.Certificates_genration.Repository.TemplateImageRepository;
 import Tech_Nagendra.Certificates_genration.Repository.TemplateRepository;
 import Tech_Nagendra.Certificates_genration.Repository.ProfileRepository;
 import Tech_Nagendra.Certificates_genration.Security.UserPrincipal;
+
 import net.sf.jasperreports.engine.*;
 import net.sf.jasperreports.engine.data.JRBeanCollectionDataSource;
+import net.sf.jasperreports.export.SimpleExporterInput;
+import net.sf.jasperreports.export.SimpleOutputStreamExporterOutput;
+import net.sf.jasperreports.export.SimplePdfExporterConfiguration;
+import net.sf.jasperreports.export.SimplePdfReportConfiguration;
 import net.sf.jasperreports.engine.export.JRPdfExporter;
-import net.sf.jasperreports.export.*;
 import net.sf.jasperreports.export.type.PdfaConformanceEnum;
+
 import org.apache.poi.ss.usermodel.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -21,13 +28,17 @@ import org.springframework.stereotype.Service;
 import java.awt.*;
 import java.awt.Font;
 import java.io.*;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
+import java.util.jar.JarEntry;
+import java.util.jar.JarInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+
 
 @Service
 public class CertificateService {
@@ -46,41 +57,80 @@ public class CertificateService {
     @Autowired
     private ReportService reportService;
 
-    @Value("${file.upload-dir}")
+   // @Value("${file.upload-dir:C:/certificate_storage/templates/}")
+    @Value("${certificate.template.path:${user.dir}/templates/}")
     private String baseTemplateFolder;
 
-    private static boolean fontsLoaded = false;
+    @Value("${custom.fonts.lib:lib}")
+    private String libsFolder;
+
+    @Value("${custom.fonts.dir:src/main/resources/fonts}")
+    private String classpathFontsDir;
+
+    private static volatile boolean fontsLoaded = false;
 
     private synchronized void loadAllFonts() {
         if (fontsLoaded) return;
         try {
             GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
-            URL fontsDirURL = getClass().getResource("/fonts/");
-            if (fontsDirURL != null) {
-                File fontsDir = new File(fontsDirURL.toURI());
-                File[] files = fontsDir.listFiles((dir, name) ->
-                        name.toLowerCase().endsWith(".ttf") ||
-                                name.toLowerCase().endsWith(".otf") ||
-                                name.toLowerCase().endsWith(".jar")
-                );
-                if (files != null) {
-                    for (File f : files) {
-                        try {
-                            if (f.getName().toLowerCase().endsWith(".jar")) {
-                                loadFontsFromJar(f);
-                            } else {
-                                loadFontFromFile(f);
-                            }
-                        } catch (Exception ex) {
-                            logger.warn("Skipping font {} due to: {}", f.getName(), ex.getMessage());
+
+            // 1) Load from classpath resources (/src/main/resources/fonts)
+            try {
+                URL fontsDirUrl = getClass().getResource("/fonts/");
+                if (fontsDirUrl != null) {
+                    File fontsDir;
+                    try {
+                        fontsDir = new File(fontsDirUrl.toURI());
+                    } catch (URISyntaxException e) {
+                        fontsDir = new File(fontsDirUrl.getPath());
+                    }
+                    loadFontsFromFolder(fontsDir);
+                } else {
+                    loadFontsFromClasspathFolder("/fonts/");
+                }
+            } catch (Exception e) {
+                logger.info("Classpath fonts scan error: {}", e.getMessage());
+            }
+
+            // 2) Load from configured upload-dir
+            try {
+                File externalFonts = new File(baseTemplateFolder);
+                if (externalFonts.exists() && externalFonts.isDirectory()) {
+                    loadFontsFromFolder(externalFonts);
+                } else {
+                    // Also try fonts subfolder
+                    File fontsSub = new File(baseTemplateFolder, "fonts");
+                    if (fontsSub.exists() && fontsSub.isDirectory()) loadFontsFromFolder(fontsSub);
+                }
+            } catch (Exception e) {
+                logger.info("External fonts scan error: {}", e.getMessage());
+            }
+
+            // 3) Load font jars from libs folder
+            try {
+                File libDir = new File(libsFolder);
+                if (libDir.exists() && libDir.isDirectory()) {
+                    File[] jars = libDir.listFiles((d, name) -> name.toLowerCase().endsWith(".jar"));
+                    if (jars != null) {
+                        for (File j : jars) {
+                            loadFontsFromJarFile(j);
                         }
                     }
                 }
+            } catch (Exception e) {
+                logger.info("Libs folder scan error: {}", e.getMessage());
             }
-            loadSystemFonts();
+
+
+            try {
+                loadSystemFonts();
+            } catch (Exception ignored) {}
+
+            // 5) Set JasperReports properties for HTML markup & font embedding
             setupJasperReportsProperties();
+
             fontsLoaded = true;
-            logger.info("Fonts loaded");
+            logger.info("Fonts loaded and JasperReports properties set.");
         } catch (Exception e) {
             logger.error("Error loading fonts", e);
             try { setupJasperReportsProperties(); } catch (Exception ignore) {}
@@ -88,28 +138,105 @@ public class CertificateService {
         }
     }
 
-    private void loadFontsFromJar(File jarFile) throws Exception {
-        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(jarFile)) {
-            Enumeration<java.util.jar.JarEntry> entries = jar.entries();
-            while (entries.hasMoreElements()) {
-                java.util.jar.JarEntry entry = entries.nextElement();
-                String name = entry.getName().toLowerCase();
-                if (name.endsWith(".ttf") || name.endsWith(".otf")) {
-                    try (InputStream is = jar.getInputStream(entry)) {
-                        Font font = Font.createFont(Font.TRUETYPE_FONT, is);
-                        GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(font);
-                    } catch (Exception e) {
-                        logger.warn("Failed to load font from jar entry {}: {}", entry.getName(), e.getMessage());
+    private void loadFontsFromFolder(File folder) {
+        if (folder == null || !folder.exists() || !folder.isDirectory()) return;
+        File[] files = folder.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            try {
+                if (f.isDirectory()) {
+                    loadFontsFromFolder(f);
+                } else {
+                    String name = f.getName().toLowerCase();
+                    if (name.endsWith(".ttf") || name.endsWith(".otf")) {
+                        try (InputStream is = Files.newInputStream(f.toPath())) {
+                            Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                            GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(font);
+                            logger.info("Registered font file: {}", f.getAbsolutePath());
+                        } catch (Exception ex) {
+                            logger.warn("Failed to register font file {} : {}", f.getName(), ex.getMessage());
+                        }
+                    } else if (name.endsWith(".jar")) {
+                        loadFontsFromJarFile(f);
                     }
                 }
+            } catch (Exception e) {
+                logger.warn("Error processing {} : {}", f.getName(), e.getMessage());
             }
         }
     }
 
-    private void loadFontFromFile(File fontFile) throws Exception {
-        try (InputStream is = Files.newInputStream(fontFile.toPath())) {
-            Font font = Font.createFont(Font.TRUETYPE_FONT, is);
-            GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(font);
+    private void loadFontsFromClasspathFolder(String resourceFolder) {
+        try {
+            URL url = getClass().getResource(resourceFolder);
+            if (url == null) return;
+            String protocol = url.getProtocol();
+            if ("jar".equals(protocol)) {
+                String path = url.getPath();
+                String jarPath;
+                if (path.startsWith("file:")) {
+                    jarPath = path.substring(5, path.indexOf("!"));
+                } else {
+                    int excl = path.indexOf("!");
+                    jarPath = path.substring(0, excl);
+                }
+                try (JarInputStream jis = new JarInputStream(new FileInputStream(jarPath))) {
+                    JarEntry entry;
+                    while ((entry = jis.getNextJarEntry()) != null) {
+                        String name = entry.getName().toLowerCase();
+                        if (name.startsWith("fonts/") && (name.endsWith(".ttf") || name.endsWith(".otf"))) {
+                            try (InputStream is = getClass().getResourceAsStream("/" + entry.getName())) {
+                                if (is != null) {
+                                    Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                                    GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(font);
+                                    logger.info("Registered classpath font: {}", entry.getName());
+                                }
+                            } catch (Exception ex) {
+                                logger.warn("Failed to register classpath font {} : {}", entry.getName(), ex.getMessage());
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed scanning jar for fonts: {}", e.getMessage());
+                }
+            } else if ("file".equals(protocol)) {
+                try {
+                    File folder = new File(url.toURI());
+                    loadFontsFromFolder(folder);
+                } catch (URISyntaxException e) {
+                    logger.warn("Invalid URI for classpath fonts folder: {}", e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Could not load fonts from classpath folder {} : {}", resourceFolder, e.getMessage());
+        }
+    }
+
+    private void loadFontsFromJarFile(File jarFile) {
+        if (jarFile == null || !jarFile.exists()) return;
+        try (FileInputStream fis = new FileInputStream(jarFile);
+             JarInputStream jis = new JarInputStream(fis)) {
+            JarEntry entry;
+            while ((entry = jis.getNextJarEntry()) != null) {
+                String name = entry.getName().toLowerCase();
+                if (name.endsWith(".ttf") || name.endsWith(".otf")) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[4096];
+                    int read;
+                    while ((read = jis.read(buffer)) != -1) {
+                        baos.write(buffer, 0, read);
+                    }
+                    try (InputStream is = new ByteArrayInputStream(baos.toByteArray())) {
+                        Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                        GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(font);
+                        logger.info("Registered font from jar {} -> {}", jarFile.getName(), name);
+                    } catch (Exception ex) {
+                        logger.warn("Failed to create font from jar entry {} : {}", name, ex.getMessage());
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            logger.warn("Failed reading jar {} : {}", jarFile.getName(), ex.getMessage());
         }
     }
 
@@ -117,18 +244,18 @@ public class CertificateService {
         String[] fontDirs = {
                 "C:\\Windows\\Fonts",
                 "/usr/share/fonts",
-                "/Library/Fonts",
-                System.getProperty("user.home") + File.separator + "AppData\\Local\\Microsoft\\Windows\\Fonts"
+                "/usr/local/share/fonts",
+                "/Library/Fonts"
         };
-        for (String dirPath : fontDirs) {
+        for (String fd : fontDirs) {
             try {
-                File dir = new File(dirPath);
+                File dir = new File(fd);
                 if (dir.exists() && dir.isDirectory()) {
-                    File[] fontFiles = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".ttf") || name.toLowerCase().endsWith(".otf"));
-                    if (fontFiles != null) {
-                        for (File f : fontFiles) {
-                            try {
-                                Font font = Font.createFont(Font.TRUETYPE_FONT, f);
+                    File[] files = dir.listFiles((d, n) -> n.toLowerCase().endsWith(".ttf") || n.toLowerCase().endsWith(".otf"));
+                    if (files != null) {
+                        for (File f : files) {
+                            try (InputStream is = Files.newInputStream(f.toPath())) {
+                                Font font = Font.createFont(Font.TRUETYPE_FONT, is);
                                 GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(font);
                             } catch (Exception ignored) {}
                         }
@@ -231,7 +358,6 @@ public class CertificateService {
         if (candidates == null || candidates.isEmpty()) throw new Exception("No candidates found");
         List<File> templateStaticImages = loadStaticImages(template.getTemplateFolder());
         List<File> baseStaticImages = loadStaticImages(baseTemplateFolder);
-        setupHtmlSupportSystemProperties();
         for (CandidateDTO candidate : candidates) {
             String sid = candidate.getSid();
             if (sid == null || sid.trim().isEmpty()) continue;
@@ -262,16 +388,6 @@ public class CertificateService {
         return createResultMap(pdfFiles, uniqueBySid, outputFolder);
     }
 
-    private void setupHtmlSupportSystemProperties() {
-        System.setProperty("net.sf.jasperreports.print.keep.full.text", "true");
-        System.setProperty("net.sf.jasperreports.export.pdf.force.linebreak.policy", "true");
-        System.setProperty("net.sf.jasperreports.export.pdf.embedded", "true");
-        System.setProperty("net.sf.jasperreports.export.pdf.font.embedded", "true");
-        System.setProperty("net.sf.jasperreports.text.markup.html", "html");
-        System.setProperty("net.sf.jasperreports.markup.processor.factory", "net.sf.jasperreports.engine.util.HtmlMarkupProcessorFactory");
-        System.setProperty("net.sf.jasperreports.markup.parser.html.enabled", "true");
-    }
-
     private Report createReport(CandidateDTO candidate, UserPrincipal currentUser) {
         Report report = new Report();
         report.setSid(candidate.getSid());
@@ -291,7 +407,7 @@ public class CertificateService {
         Map<String, Object> parameters = createJasperParameters();
         setupImageParameters(parameters, templateStaticImages, baseStaticImages, extractedZipFolder, imageType, uploadedFiles, candidate);
         CandidateDTO dataCandidate = createModifiedCandidateForHtml(candidate);
-        JasperPrint jasperPrint = JasperFillManager.fillReport(jasperReport, parameters, new JRBeanCollectionDataSource(Collections.singleton(dataCandidate)));
+        JasperPrint jasperPrint = JasperFillManager.fillReport(jasperReport, parameters, new JRBeanCollectionDataSource(Collections.singletonList(dataCandidate)));
         return exportToPdf(jasperPrint, candidate, outputFolder);
     }
 
@@ -356,7 +472,7 @@ public class CertificateService {
         for (File f : all) {
             if (bg != null && f.equals(bg)) continue;
             parameters.put("imgParam" + idx++, f.getAbsolutePath());
-            if (idx > 10) break;
+            if (idx > 15) break;
         }
         if (imageType >= 1 && extractedZipFolder != null) {
             File candidateImg = findCandidateImage(extractedZipFolder, candidate.getSid());
