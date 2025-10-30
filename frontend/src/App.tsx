@@ -15,19 +15,20 @@ import Dashboard from "./pages/Dashboard";
 import Certificates from "./pages/Certificates";
 import Reports from "./pages/Reports";
 import Profile from "./pages/Profile";
+import Registation from "./pages/registation";
 import UploadTemplate from "./pages/upload-template";
 import { AdminLayout } from "./components/AdminLayout";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-// 🔒 Authenticated route wrapper
+// Authenticated route wrapper
 const PrivateRoute = () => {
   const token = sessionStorage.getItem("authToken");
   return token ? <Outlet /> : <Navigate to="/login" replace />;
 };
 
-// 🔐 Helper function to check admin
+//  Helper function to check admin
 const isUserAdmin = (): boolean => {
   const token = sessionStorage.getItem("authToken");
   if (!token) return false;
@@ -71,10 +72,11 @@ const App = () => {
               <Route path="/" element={<AdminLayout />}>
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="certificates" element={<Certificates />} />
-                {/* ✅ Pass isAdmin prop here */}
+                {/*  Pass isAdmin prop here */}
                 <Route path="reports" element={<Reports isAdmin={isAdmin} />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="upload-template" element={<UploadTemplate />} />
+                <Route path="registation" element={<Registation />} />
               </Route>
             </Route>
 

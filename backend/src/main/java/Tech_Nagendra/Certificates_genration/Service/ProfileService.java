@@ -16,6 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Service
@@ -27,9 +28,32 @@ public class ProfileService {
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
 
-    public UserProfile findById(Long userId) {
-        return profileRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
+    public ProfileDto registerUser(ProfileDto profileDto, String rawPassword) {
+        if (profileDto.getEmail() == null || profileDto.getUsername() == null || rawPassword == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email, Username and Password are required");
+        }
+
+        if (profileRepository.existsByEmail(profileDto.getEmail())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");
+        }
+
+        if (profileRepository.existsByUsername(profileDto.getUsername())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already exists");
+        }
+
+        UserProfile newUser = new UserProfile();
+        newUser.setName(profileDto.getName());
+        newUser.setUsername(profileDto.getUsername());
+        newUser.setEmail(profileDto.getEmail());
+        newUser.setPassword(passwordEncoder.encode(rawPassword));
+        newUser.setRole(profileDto.getRole() != null ? profileDto.getRole() : "USER");
+        newUser.setCreatedAt(LocalDateTime.now());
+        newUser.setModifiedAt(LocalDateTime.now());
+        newUser.setCreatedBy(null);
+        newUser.setModifiedBy(null);
+
+        UserProfile savedUser = profileRepository.save(newUser);
+        return mapToDto(savedUser);
     }
 
     public ProfileDto getProfile(String token) {
@@ -53,8 +77,8 @@ public class ProfileService {
             targetUser.setEmail(profileDto.getEmail());
         }
 
-        // ✅ Fix: modifiedBy must be UserProfile object, not Long
         targetUser.setModifiedBy(currentUser);
+        targetUser.setModifiedAt(LocalDateTime.now());
 
         UserProfile updated = profileRepository.save(targetUser);
         return mapToDto(updated);
@@ -69,7 +93,8 @@ public class ProfileService {
         }
 
         user.setPassword(passwordEncoder.encode(dto.getNewPassword()));
-        user.setModifiedBy(user); // optional: mark who changed password
+        user.setModifiedBy(user);
+        user.setModifiedAt(LocalDateTime.now());
         profileRepository.save(user);
         return true;
     }
@@ -84,6 +109,11 @@ public class ProfileService {
         String lastGenerated = lastReport.map(r -> r.getGeneratedOn().toString()).orElse("N/A");
 
         return new ProfileStatsDto((int) totalCertificates, (int) activeCertificates, lastGenerated);
+    }
+
+    public UserProfile findById(Long userId) {
+        return profileRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
     }
 
     public void saveLoginToken(Long userId, String token) {
@@ -123,8 +153,8 @@ public class ProfileService {
                 user.getRole(),
                 user.getCreatedAt(),
                 user.getModifiedAt(),
-                user.getCreatedBy() != null ? user.getCreatedBy().getId() : null, // ✅ Fix here
-                user.getModifiedBy() != null ? user.getModifiedBy().getId() : null  // ✅ Fix here
+                user.getCreatedBy() != null ? user.getCreatedBy().getId() : null,
+                user.getModifiedBy() != null ? user.getModifiedBy().getId() : null
         );
     }
 }

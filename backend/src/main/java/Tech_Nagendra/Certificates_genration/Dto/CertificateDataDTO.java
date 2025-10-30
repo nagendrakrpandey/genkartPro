@@ -4,7 +4,7 @@ import lombok.Data;
 @Data
 public class CertificateDataDTO {
     private String sid;
-    private Long generatedBy;   // frontend can set userId if needed
+    private Long generatedBy;
     private String jobRole;
     private String courseName;
     private String level;

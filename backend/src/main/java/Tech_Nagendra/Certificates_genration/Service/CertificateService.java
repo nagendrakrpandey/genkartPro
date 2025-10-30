@@ -441,6 +441,8 @@ public class CertificateService {
         m.setBatchId(original.getBatchId());
         m.setState(original.getState());
         m.setDistrict(original.getDistrict());
+        m.setCourseName(original.getCourseName());
+        m.setCandidateName(original.getDuration());
         m.setPlace(original.getPlace());
         m.setTemplate(original.getTemplate());
         return m;

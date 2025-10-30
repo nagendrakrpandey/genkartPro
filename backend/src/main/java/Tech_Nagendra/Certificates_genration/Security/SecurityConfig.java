@@ -41,6 +41,7 @@ public class SecurityConfig {
                         .requestMatchers("/templates/**").permitAll()
                         .requestMatchers("/certificates/**").permitAll()
                         .requestMatchers("/reports/**").permitAll()
+                        .requestMatchers("/profile/register").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session ->

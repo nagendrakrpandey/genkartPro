@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/profile")
@@ -54,6 +55,30 @@ public class ProfileController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Failed to update profile: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> registerUser(@RequestBody ProfileDto profileDto,
+                                          @RequestHeader(value = "Authorization", required = false) String tokenHeader) {
+        try {
+            String token = null;
+            if (tokenHeader != null && tokenHeader.startsWith("Bearer ")) {
+                token = extractToken(tokenHeader);
+                System.out.println("Registration requested with JWT: " + token);
+            }
+            if (profileDto.getPassword() == null || profileDto.getPassword().isEmpty()) {
+                return ResponseEntity.badRequest().body("Password is required.");
+            }
+            ProfileDto newUser = profileService.registerUser(profileDto, profileDto.getPassword());
+            return ResponseEntity.status(HttpStatus.CREATED).body(newUser);
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(e.getReason());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to register user: " + e.getMessage());
         }
     }
 

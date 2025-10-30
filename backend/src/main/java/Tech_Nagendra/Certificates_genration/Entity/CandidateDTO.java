@@ -38,6 +38,8 @@ public class CandidateDTO {
     private String marks10;
     private String batchId;
     private String state;
+    private String  courseName;
+    private String duration;
     private String district;
     private String place;
     @ManyToOne
